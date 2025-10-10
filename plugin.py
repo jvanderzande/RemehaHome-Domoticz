@@ -113,6 +113,7 @@ class RemehaHomeAPI:
                     "prompt": "login",
                     "signUp": "False",
                 },
+                timeout=10,
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
@@ -181,6 +182,7 @@ class RemehaHomeAPI:
                     "p": "B2C_1A_RPSignUpSignInNewRoomv3.1",
                 },
                 allow_redirects=False,
+                timeout=10,
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
@@ -251,7 +253,7 @@ class RemehaHomeAPI:
         #Domoticz.Log("Getting device states...")
         try:
             response = self._session.get(
-                "https://api.bdrthermea.net/Mobile/api/homes/dashboard", headers=headers
+                "https://api.bdrthermea.net/Mobile/api/homes/dashboard", headers=headers, timeout=10
             )
 
             response.raise_for_status()
