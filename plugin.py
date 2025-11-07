@@ -308,7 +308,7 @@ class RemehaHomeAPI:
                 value_firePlaceModeActive = response_json["appliances"][0]["climateZones"][0]["firePlaceModeActive"]
                 if value_firePlaceModeActive == True:
                     Devices[13].Update(nValue=0, sValue="On")
-                if value_firePlaceModeActive == True:
+                if value_firePlaceModeActive == False:
                     Devices[13].Update(nValue=0, sValue="Off")
             else:
                 Devices[13].Update(nValue=0, sValue="Off")
