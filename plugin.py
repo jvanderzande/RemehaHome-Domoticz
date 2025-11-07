@@ -39,7 +39,7 @@ class RemehaHomeAPI:
         # Read options from Domoticz GUI
         self.readOptions()
         # Check if there are no existing devices
-        if len(Devices) != 12:
+        if len(Devices) != 13:
             # Example: Create devices for temperature, pressure, and setpoint
             self.createDevices()
         Domoticz.Heartbeat(5)
@@ -80,6 +80,7 @@ class RemehaHomeAPI:
         Domoticz.Device(Name="EnergyDelivered", Unit=10, Type=243, TypeName="Kwh", Subtype=29, Switchtype=4, Used=1).Create()
         Domoticz.Device(Name="Status", Unit=11, TypeName="Text", Image=15, Used=1).Create()
         Domoticz.Device(Name="seasonalEfficiency", Unit=12, Type=243, Subtype=31, Used=1).Create()
+        Domoticz.Device(Name="waterPressureToLow", Unit=13, TypeName="Switch", Switchtype=0, Image=10, Used=1).Create()
 
 
 
@@ -244,6 +245,8 @@ class RemehaHomeAPI:
             # declaring value_dhwTemperature to not break if the value is not present.
             value_dhwTemperature = None
             
+            
+            
             # Update Domoticz devices here based on the response_json
             value_room_temperature = response_json["appliances"][0]["climateZones"][0]["roomTemperature"]
             if response_json["appliances"][0]["capabilityOutdoorTemperature"] is True:
@@ -301,6 +304,14 @@ class RemehaHomeAPI:
             else:
                 Devices[9].Update(nValue=1, sValue="On")
             Devices[11].Update(nValue=0, sValue=str(value_status))
+            if response_json["appliances"][0]["climateZones"][0]["capabilityFirePlaceMode"] is True:
+                value_firePlaceModeActive = response_json["appliances"][0]["climateZones"][0]["firePlaceModeActive"]
+                if value_firePlaceModeActive == True:
+                    Devices[13].Update(nValue=0, sValue="On")
+                if value_firePlaceModeActive == True:
+                    Devices[13].Update(nValue=0, sValue="Off")
+            else:
+                Devices[13].Update(nValue=0, sValue="Off")
         
 
         except Exception as e:
