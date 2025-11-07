@@ -80,7 +80,7 @@ class RemehaHomeAPI:
         Domoticz.Device(Name="EnergyDelivered", Unit=10, Type=243, TypeName="Kwh", Subtype=29, Switchtype=4, Used=1).Create()
         Domoticz.Device(Name="Status", Unit=11, TypeName="Text", Image=15, Used=1).Create()
         Domoticz.Device(Name="seasonalEfficiency", Unit=12, Type=243, Subtype=31, Used=1).Create()
-        Domoticz.Device(Name="waterPressureToLow", Unit=13, TypeName="Switch", Switchtype=0, Image=10, Used=1).Create()
+        Domoticz.Device(Name="firePlaceModeActive", Unit=13, TypeName="Switch", Switchtype=0, Image=10, Used=1).Create()
 
 
 
