@@ -530,6 +530,37 @@ class RemehaHomeAPI:
                 print("Error:", e)
                 return "invalid"
     
+    def fireplacemode(self, access_token, level):
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Ocp-Apim-Subscription-Key': 'df605c5470d846fc91e848b1cc653ddf'
+            }
+        Domoticz.Log(level)
+        try:
+            if level == 0: # Fireplace mode on
+                Domoticz.Log("in the if loop van level 0")
+                json_data = {"fireplaceModeActive": False}
+                response = requests.post(
+                    f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/fireplacemode',
+                    headers=headers,
+                    json=json_data
+                    )
+                response.raise_for_status()
+                Domoticz.Log("Fireplace succesfully set to true")
+            elif level == 1: # Fireplace mode off
+                json_data = {"fireplaceModeActive": False}
+                response = requests.post(
+                    f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/fireplacemode',
+                    headers=headers,
+                    json=json_data
+                    )
+                response.raise_for_status()
+                Domoticz.Log("Fireplace succesfully set to false")
+                
+        except Exception as e:
+            print("Error:", e)
+            return "invalid"
+    
     def onheartbeat(self):
         # Heartbeat function called periodically
         Domoticz.Heartbeat(self.poll_interval)
@@ -575,6 +606,8 @@ class RemehaHomeAPI:
                         self.set_temperature(access_token, room_temperature_setpoint)
                 elif unit == 8: # zonemode device
                     self.zonemode(access_token, level)
+                elif unit == 13: # fireplace mode
+                    self.fireplacemode(access_token, level)
             except Exception as e:
                 Domoticz.Error(f"Error making POST request: {e}")
         else:
