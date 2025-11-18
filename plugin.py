@@ -550,7 +550,7 @@ class RemehaHomeAPI:
                     )
                 response.raise_for_status()
                 Devices[13].Update(nValue=0, sValue="Off")
-                Domoticz.Log("FireplaceMode succesfully set to false")
+                Domoticz.Log("Fireplace Mode succesfully set to false")
             elif str(value_firePlaceModeActive) == "False": # Fireplace mode currently off                
                 json_data = {"fireplaceModeActive": True}
                 response = requests.post(
