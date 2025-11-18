@@ -25,6 +25,12 @@ import datetime
 import calendar
 import time
 
+
+
+
+
+
+
 class RemehaHomeAPI:
     def __init__(self):
         # Initialize a session for making HTTP requests
@@ -223,10 +229,15 @@ class RemehaHomeAPI:
         
         global appliance_id
         global climate_zone_id
+        global firePlaceModeActive
+        global value_firePlaceModeActive
+
         
         # Initialize global variables if not already set
         appliance_id = globals().get('appliance_id', None)
         climate_zone_id = globals().get('climate_zone_id', None)
+        firePlaceModeActive = globals().get('firePlaceModeActive', None)
+        value_firePlaceModeActive = globals().get('value_firePlaceModeActive', None)
 
         #Domoticz.Log("Getting device states...")
         try:
@@ -244,7 +255,6 @@ class RemehaHomeAPI:
             
             # declaring value_dhwTemperature to not break if the value is not present.
             value_dhwTemperature = None
-            
             
             
             # Update Domoticz devices here based on the response_json
@@ -304,14 +314,19 @@ class RemehaHomeAPI:
             else:
                 Devices[9].Update(nValue=1, sValue="On")
             Devices[11].Update(nValue=0, sValue=str(value_status))
+
+
             if response_json["appliances"][0]["climateZones"][0]["capabilityFirePlaceMode"] is True:
                 value_firePlaceModeActive = response_json["appliances"][0]["climateZones"][0]["firePlaceModeActive"]
                 if value_firePlaceModeActive == True:
                     Devices[13].Update(nValue=1, sValue="On")
+                    Domoticz.Log("device 13 true = "+ str(value_firePlaceModeActive))
                 if value_firePlaceModeActive == False:
                     Devices[13].Update(nValue=0, sValue="Off")
+                    Domoticz.Log("device 13 false = "+ str(value_firePlaceModeActive))
             else:
-                Devices[13].Update(nValue=0, sValue="Off")
+                Devices[13].Update(nValue=None, sValue=None)
+                Domoticz.Log("device 13 else")
         
 
         except Exception as e:
@@ -530,15 +545,16 @@ class RemehaHomeAPI:
                 print("Error:", e)
                 return "invalid"
     
-    def fireplacemode(self, access_token, level):
+    def fireplacemode(self, access_token, fireplacemode):
         headers = {
             'Authorization': f'Bearer {access_token}',
             'Ocp-Apim-Subscription-Key': 'df605c5470d846fc91e848b1cc653ddf'
             }
-        Domoticz.Log(level)
+        value_firePlaceModeActive = globals().get('value_firePlaceModeActive', None)
         try:
-            if level == 0: # Fireplace mode on
-                Domoticz.Log("in the if loop van level 0")
+            if str(value_firePlaceModeActive) == "True": # Fireplace mode currently on
+                Domoticz.Log("value_firePlaceModeActive in loop is:" + str(value_firePlaceModeActive))
+                Domoticz.Log("in the if loop van true ---> False")
                 json_data = {"fireplaceModeActive": False}
                 response = requests.post(
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/fireplacemode',
@@ -546,16 +562,20 @@ class RemehaHomeAPI:
                     json=json_data
                     )
                 response.raise_for_status()
-                Domoticz.Log("Fireplace succesfully set to true")
-            elif level == 1: # Fireplace mode off
-                json_data = {"fireplaceModeActive": False}
-                response = requests.post(
-                    f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/fireplacemode',
-                    headers=headers,
-                    json=json_data
-                    )
-                response.raise_for_status()
+                Devices[13].Update(nValue=0, sValue="Off")
                 Domoticz.Log("Fireplace succesfully set to false")
+            elif str(value_firePlaceModeActive): # Fireplace mode currently off
+                Domoticz.Log("in the if loop van False ---> true")
+                Domoticz.Log("value_firePlaceModeActive in loop is:" + str(value_firePlaceModeActive))                
+                json_data = {"fireplaceModeActive": True}
+                response = requests.post(
+                    f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/fireplacemode',
+                    headers=headers,
+                    json=json_data
+                    )
+                response.raise_for_status()
+                Devices[13].Update(nValue=1, sValue="On")
+                Domoticz.Log("Fireplace succesfully set to true")
                 
         except Exception as e:
             print("Error:", e)
