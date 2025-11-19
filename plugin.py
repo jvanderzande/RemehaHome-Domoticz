@@ -541,6 +541,12 @@ class RemehaHomeAPI:
             }
         value_firePlaceModeActive = globals().get('value_firePlaceModeActive', None)
         try:
+                if value_firePlaceModeActive is None:
+                try:
+                    if response_json["appliances"][0]["climateZones"][0]["capabilityFirePlaceMode"] is True:
+                        value_firePlaceModeActive = response_json["appliances"][0]["climateZones"][0]["firePlaceModeActive"]
+                except:
+                    pass
             if str(value_firePlaceModeActive) == "True": # Fireplace mode currently on
                 json_data = {"fireplaceModeActive": False}
                 response = requests.post(
