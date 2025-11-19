@@ -157,6 +157,7 @@ class RemehaHomeAPI:
                     "signInName": self.email,
                     "password": self.password,
                 },
+                timeout=10,
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
@@ -221,6 +222,7 @@ class RemehaHomeAPI:
             "https://remehalogin.bdrthermea.net/bdrb2cprod.onmicrosoft.com/oauth2/v2.0/token?p=B2C_1A_RPSignUpSignInNewRoomV3.1",
             data=grant_params,
             allow_redirects=True,
+            timeout=10,
         ) as response:
             if response.status_code != 200:
                 response_json = response.json()
@@ -342,13 +344,15 @@ class RemehaHomeAPI:
                 response = self._session.post(
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/manual',
                     headers=headers,
-                    json=json_data
+                    json=json_data,
+                    timeout=10,
                     )
             else: # zonemode is not manual then temporary override
                 response = self._session.post(
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/temporary-override',
                     headers=headers,
-                    json=json_data
+                    json=json_data,
+                    timeout=10,
                     )
             response.raise_for_status()
             Domoticz.Log(f"Temperature set successfully to {room_temperature_setpoint}")
@@ -526,14 +530,16 @@ class RemehaHomeAPI:
                 response = self._session.post(
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/temporary-override',
                     headers=headers,
-                    json=json_data
+                    json=json_data,
+                    timeout=10,
                     )
                 response.raise_for_status()
                 Domoticz.Log("Zonemode succesfully set to TemporaryOverride")
             elif level == 30: # FrostProtection mode
                 response = self._session.post(
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/anti-frost',
-                    headers=headers
+                    headers=headers,
+                    timeout=10,
                     )
                 response.raise_for_status()
                 Domoticz.Log("Zonemode succesfully set to FrostProtection")
