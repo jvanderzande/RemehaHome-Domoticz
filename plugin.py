@@ -1,5 +1,5 @@
 """
-<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz" version="1.3.0">
+<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz" version="1.3.1">
     <params>
         <param field="Mode1" label="Email" width="200px" required="true"/>
         <param field="Mode2" label="Password" width="200px" password="true" required="true"/>
@@ -117,7 +117,8 @@ class RemehaHomeAPI:
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
-            Domoticz.Error(f"Error authorize: {str(e)}")
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"Authorize error: {type(e).__name__}: {reason}")
             return None
         except Exception as e:
             Domoticz.Error(f"Unexpected error during GET request: {str(e)}")
@@ -161,7 +162,8 @@ class RemehaHomeAPI:
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
-            Domoticz.Error(f"Error during GET request for SelfAsserted: {str(e)}")
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"Error during GET request for SelfAsserted: {type(e).__name__}: {reason}")
             return None
         except Exception as e:
             Domoticz.Error(f"Unexpected error during GET request: {str(e)}")
@@ -187,7 +189,8 @@ class RemehaHomeAPI:
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
-            Domoticz.Error(f"Error during GET request for CombinedSigninAndSignup: {str(e)}")
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"Error during GET request for CombinedSigninAndSignup: {type(e).__name__}: {reason}")
             return None
         except Exception as e:
             Domoticz.Error(f"Unexpected error during GET request: {str(e)}")
@@ -327,6 +330,10 @@ class RemehaHomeAPI:
                 Devices[9].Update(nValue=1, sValue="On")
             Devices[11].Update(nValue=0, sValue=str(value_status))
 
+        except requests.exceptions.RequestException as e:
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"Error during GET request for dashboard: {type(e).__name__}: {reason}")
+            return None
 
         except Exception as e:
             Domoticz.Error(f"Error making GET request: {e}")
