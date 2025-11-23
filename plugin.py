@@ -539,7 +539,6 @@ class RemehaHomeAPI:
             'Authorization': f'Bearer {access_token}',
             'Ocp-Apim-Subscription-Key': 'df605c5470d846fc91e848b1cc653ddf'
             }
-        value_firePlaceModeActive = globals().get('value_firePlaceModeActive', None)
         try:
             if str(value_firePlaceModeActive) == "True": # Fireplace mode currently on
                 json_data = {"fireplaceModeActive": False}
