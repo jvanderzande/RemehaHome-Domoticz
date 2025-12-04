@@ -1,7 +1,7 @@
 # Remeha Home Plugin for Domoticz
 
 ## Overview
-This Domoticz Python plugin integrates with the Remeha Home API, providing real-time information about your heating system. It creates Domoticz devices for temperature, pressure, and setpoint control.
+This Domoticz Python plugin integrates with the Remeha Home API, providing real-time information about your heating system. It creates Domoticz devices for temperature, pressure, setpoint and fireplacemode control.
 
 ## Credits
 This plugin is based on the Remeha Home Python library by Michiel Visser, available at [GitHub - Remeha Home Library](https://github.com/msvisser/remeha_home).
@@ -30,6 +30,7 @@ The plugin creates the following devices in Domoticz:
 10. waterPressureToLow (alarm)
 11. Status
 12. seasonalEfficiency (only for air heatpumps)
+13. FireplaceMode
 
 ## Usage
 The plugin fetches data from the Remeha Home API and updates the corresponding Domoticz devices. The room temperature can be set using the "Setpoint" device, it will set the zoneMode to TemporaryOverride except when the zoneMode is set to Manual. The zoneMode can be used to set the zoneMode to the following modes: Scheduling, Manual, TemporaryOverride, FrostProtection

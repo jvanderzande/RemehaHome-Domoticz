@@ -1,5 +1,5 @@
 """
-<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz" version="1.3.1">
+<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz" version="1.4.1">
     <params>
         <param field="Mode1" label="Email" width="200px" required="true"/>
         <param field="Mode2" label="Password" width="200px" password="true" required="true"/>
@@ -56,7 +56,7 @@ class RemehaHomeAPI:
         # Read options from Domoticz GUI
         self.readOptions()
         # Check if there are no existing devices
-        if len(Devices) != 12:
+        if len(Devices) != 13:
             # Example: Create devices for temperature, pressure, and setpoint
             self.createDevices()
         Domoticz.Heartbeat(5)
@@ -97,6 +97,7 @@ class RemehaHomeAPI:
         Domoticz.Device(Name="EnergyDelivered", Unit=10, Type=243, TypeName="Kwh", Subtype=29, Switchtype=4, Used=1).Create()
         Domoticz.Device(Name="Status", Unit=11, TypeName="Text", Image=15, Used=1).Create()
         Domoticz.Device(Name="seasonalEfficiency", Unit=12, Type=243, Subtype=31, Used=1).Create()
+        Domoticz.Device(Name="firePlaceModeActive", Unit=13, TypeName="Switch", Switchtype=0, Image=10, Used=1).Create()
 
 
 
@@ -275,10 +276,15 @@ class RemehaHomeAPI:
 
         global appliance_id
         global climate_zone_id
+        global firePlaceModeActive
+        global value_firePlaceModeActive
+
 
         # Initialize global variables if not already set
         appliance_id = globals().get('appliance_id', None)
         climate_zone_id = globals().get('climate_zone_id', None)
+        firePlaceModeActive = globals().get('firePlaceModeActive', None)
+        value_firePlaceModeActive = globals().get('value_firePlaceModeActive', None)
 
         #Domoticz.Log("Getting device states...")
         try:
@@ -297,6 +303,7 @@ class RemehaHomeAPI:
 
             # declaring value_dhwTemperature to not break if the value is not present.
             value_dhwTemperature = None
+
 
             # Update Domoticz devices here based on the response_json
             value_room_temperature = response_json["appliances"][0]["climateZones"][0]["roomTemperature"]
@@ -355,6 +362,14 @@ class RemehaHomeAPI:
             else:
                 Devices[9].Update(nValue=1, sValue="On")
             Devices[11].Update(nValue=0, sValue=str(value_status))
+            if response_json["appliances"][0]["climateZones"][0]["capabilityFirePlaceMode"] is True:
+                value_firePlaceModeActive = response_json["appliances"][0]["climateZones"][0]["firePlaceModeActive"]
+                if value_firePlaceModeActive == True:
+                    Devices[13].Update(nValue=1, sValue="On")
+                if value_firePlaceModeActive == False:
+                    Devices[13].Update(nValue=0, sValue="Off")
+            else:
+                Devices[13].Update(nValue=0, sValue="Off")
 
         except requests.exceptions.RequestException as e:
             reason = getattr(e, 'reason', e)
@@ -586,6 +601,37 @@ class RemehaHomeAPI:
                 print("Error:", e)
                 return "invalid"
 
+    def fireplacemode(self, access_token, fireplacemode):
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Ocp-Apim-Subscription-Key': 'df605c5470d846fc91e848b1cc653ddf'
+            }
+        try:
+            if str(value_firePlaceModeActive) == "True": # Fireplace mode currently on
+                json_data = {"fireplaceModeActive": False}
+                response = requests.post(
+                    f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/fireplacemode',
+                    headers=headers,
+                    json=json_data
+                    )
+                response.raise_for_status()
+                Devices[13].Update(nValue=0, sValue="Off")
+                Domoticz.Log("Fireplace Mode succesfully set to false")
+            elif str(value_firePlaceModeActive) == "False": # Fireplace mode currently off
+                json_data = {"fireplaceModeActive": True}
+                response = requests.post(
+                    f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/fireplacemode',
+                    headers=headers,
+                    json=json_data
+                    )
+                response.raise_for_status()
+                Devices[13].Update(nValue=1, sValue="On")
+                Domoticz.Log("Fireplace Mode succesfully set to true")
+
+        except Exception as e:
+            print("Error:", e)
+            return "invalid"
+
     def onheartbeat(self):
         # Heartbeat function called periodically
         Domoticz.Heartbeat(self.poll_interval)
@@ -631,6 +677,8 @@ class RemehaHomeAPI:
                         self.set_temperature(access_token, room_temperature_setpoint)
                 elif unit == 8: # zonemode device
                     self.zonemode(access_token, level)
+                elif unit == 13: # fireplace mode
+                    self.fireplacemode(access_token, level)
             except Exception as e:
                 Domoticz.Error(f"Error making POST request: {e}")
         else:
