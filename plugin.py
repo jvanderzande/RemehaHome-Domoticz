@@ -31,6 +31,8 @@ class RemehaHomeAPI:
         self._session = requests.Session()
         self.email = ""
         self.password = ""
+        self.LastWebUpdate = None
+
 
     def _request_with_retry(self, method, url, max_retries=3, timeout=5, **kwargs):
         """Helper method to make requests with retry logic and 5 second timeout."""
@@ -633,8 +635,10 @@ class RemehaHomeAPI:
             return "invalid"
 
     def onheartbeat(self):
-        # Heartbeat function called periodically
-        Domoticz.Heartbeat(self.poll_interval)
+        # Check update interval avoiding setting heartbeat > 30
+        if self.LastWebUpdate is not None and (datetime.datetime.now() - self.LastWebUpdate).total_seconds() < self.poll_interval:
+            return
+        self.LastWebUpdate = datetime.datetime.now()
         Domoticz.Log("Remeha Home plugin heartbeat")
         current_time_minutes = time.localtime().tm_min
 
