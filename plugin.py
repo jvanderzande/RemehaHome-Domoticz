@@ -492,10 +492,6 @@ class RemehaHomeAPI:
                 Devices[13].Update(nValue=0, sValue="Off")
 
         except Exception as e:
-            Domoticz.Error(f"Error during GET request for dashboard: {type(e).__name__}: {e}")
-            return None
-
-        except Exception as e:
             Domoticz.Error(f"Error making GET request: {e}")
 
     def set_temperature(self, access_token, room_temperature_setpoint):
