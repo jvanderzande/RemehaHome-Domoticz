@@ -18,149 +18,38 @@ import Domoticz
 import base64
 import hashlib
 import json
-import urllib.request
-import urllib.error
-import urllib.parse
-import http.cookiejar
+import urllib
 import secrets
+import requests
 import datetime
 import calendar
 import time
 
 class RemehaHomeAPI:
     def __init__(self):
-        # Initialize a cookie jar and urllib opener to replace `requests`
-        self._cookie_jar = http.cookiejar.CookieJar()
-        self._opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self._cookie_jar))
+        # Initialize a session for making HTTP requests
+        self._session = requests.Session()
         self.email = ""
         self.password = ""
         self.LastWebUpdate = None
 
 
     def _request_with_retry(self, method, url, max_retries=3, timeout=5, **kwargs):
-        """Make HTTP requests using urllib with retries.
-
-        Returns a Response-like object with attributes: status_code, headers, text, json(),
-        and raise_for_status(). Supported kwargs: params, headers, data, json, allow_redirects
-        """
-        params = kwargs.get('params')
-        headers = kwargs.get('headers') or {}
-        data = kwargs.get('data')
-        json_body = kwargs.get('json')
-        allow_redirects = kwargs.get('allow_redirects', True)
-
-        last_exc = None
+        """Helper method to make requests with retry logic and 5 second timeout."""
         for attempt in range(max_retries):
             try:
-                # Build URL with params
-                parsed = urllib.parse.urlparse(url)
-                base_path = parsed.scheme + '://' + parsed.netloc + parsed.path
-                query_parts = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True) if parsed.query else []
-                if params:
-                    if isinstance(params, dict):
-                        for k, v in params.items():
-                            if isinstance(v, (list, tuple)):
-                                for item in v:
-                                    query_parts.append((k, str(item)))
-                            else:
-                                query_parts.append((k, str(v)))
-                    else:
-                        extra_q = urllib.parse.parse_qsl(str(params), keep_blank_values=True)
-                        query_parts.extend(extra_q)
-                if query_parts:
-                    url_with_q = base_path + '?' + urllib.parse.urlencode(query_parts, doseq=True)
+                if method.lower() == 'get':
+                    response = self._session.get(url, timeout=timeout, **kwargs)
+                elif method.lower() == 'post':
+                    response = self._session.post(url, timeout=timeout, **kwargs)
                 else:
-                    url_with_q = base_path
-
-                body = None
-                if json_body is not None:
-                    body = json.dumps(json_body).encode('utf-8')
-                    headers.setdefault('Content-Type', 'application/json; charset=utf-8')
-                elif data is not None:
-                    if isinstance(data, dict):
-                        body = urllib.parse.urlencode(data).encode('utf-8')
-                        headers.setdefault('Content-Type', 'application/x-www-form-urlencoded')
-                    else:
-                        body = str(data).encode('utf-8')
-
-                req = urllib.request.Request(url_with_q, data=body, method=method.upper())
-                for k, v in headers.items():
-                    req.add_header(k, v)
-
-                # Execute request. Honor allow_redirects by using a temporary no-redirect handler.
-                if not allow_redirects:
-                    class _NoRedirect(urllib.request.HTTPRedirectHandler):
-                        def redirect_request(self, req, fp, code, msg, headers, newurl):
-                            return None
-                        def http_error_301(self, req, fp, code, msg, headers):
-                            return fp
-                        def http_error_302(self, req, fp, code, msg, headers):
-                            return fp
-                        def http_error_303(self, req, fp, code, msg, headers):
-                            return fp
-                        def http_error_307(self, req, fp, code, msg, headers):
-                            return fp
-                        def http_error_308(self, req, fp, code, msg, headers):
-                            return fp
-
-                    tmp_opener = urllib.request.build_opener(_NoRedirect(), urllib.request.HTTPCookieProcessor(self._cookie_jar))
-                    resp = tmp_opener.open(req, timeout=timeout)
-                else:
-                    resp = self._opener.open(req, timeout=timeout)
-
-                resp_body = resp.read().decode('utf-8', errors='replace')
-                resp_headers = {k: v for k, v in resp.getheaders()}
-                status = resp.getcode()
-                return RemehaHomeAPI._Response(status_code=status, headers=resp_headers, body=resp_body)
-            except urllib.error.HTTPError as e:
-                last_exc = e
-                try:
-                    err_body = e.read().decode('utf-8', errors='replace')
-                    Domoticz.Log(f"HTTPError body: {err_body}")
-                except Exception:
-                    pass
-                # if redirect and caller wanted no redirects, return response-like
-                try:
-                    code = getattr(e, 'code', None)
-                    resp_headers = {}
-                    try:
-                        resp_headers = {k: v for k, v in e.headers.items()} if getattr(e, 'headers', None) else {}
-                    except Exception:
-                        resp_headers = {}
-                    if code and (300 <= int(code) < 400) and not allow_redirects:
-                        return RemehaHomeAPI._Response(status_code=code, headers=resp_headers, body=err_body)
-                except Exception:
-                    pass
-                if attempt == max_retries - 1:
-                    raise
-                Domoticz.Log(f"Retry attempt {attempt + 1}/{max_retries} for {method.upper()} {url}: HTTPError {getattr(e, 'code', e)}")
-                time.sleep(1)
-            except urllib.error.URLError as e:
-                last_exc = e
-                if attempt == max_retries - 1:
-                    raise
-                Domoticz.Log(f"Retry attempt {attempt + 1}/{max_retries} for {method.upper()} {url}: URLError {e.reason}")
-                time.sleep(1)
-            except Exception as e:
-                last_exc = e
+                    raise ValueError(f"Unsupported method: {method}")
+                return response
+            except requests.exceptions.RequestException as e:
                 if attempt == max_retries - 1:
                     raise
                 Domoticz.Log(f"Retry attempt {attempt + 1}/{max_retries} for {method.upper()} {url}: {e}")
-                time.sleep(1)
-        if last_exc:
-            raise last_exc
         return None
-
-    class _Response:
-        def __init__(self, status_code=0, headers=None, body=''):
-            self.status_code = status_code
-            self.headers = headers or {}
-            self.text = body
-        def json(self):
-            return json.loads(self.text) if self.text else {}
-        def raise_for_status(self):
-            if self.status_code and int(self.status_code) >= 400:
-                raise Exception(f"HTTP {self.status_code}")
 
     def onStart(self):
         # Called when the plugin is started
@@ -230,7 +119,6 @@ class RemehaHomeAPI:
             response = self._request_with_retry(
                 "get",
                 "https://remehalogin.bdrthermea.net/bdrb2cprod.onmicrosoft.com/oauth2/v2.0/authorize",
-                allow_redirects=False,
                 params={
                     "response_type": "code",
                     "client_id": "6ce007c6-0628-419e-88f4-bee2e6418eec",
@@ -248,18 +136,19 @@ class RemehaHomeAPI:
                 },
             )
             response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"Authorize error: {type(e).__name__}: {reason}")
+            return None
         except Exception as e:
-            Domoticz.Error(f"Authorize error: {type(e).__name__}: {e}")
+            Domoticz.Error(f"Unexpected error during GET request: {str(e)}")
             return None
 
         if response.status_code != 200:
             Domoticz.Error(f"Error received from server (authorize): {response.status_code}")
             return None
 
-        # Case-insensitive header lookup, with gateway fallback
-        resp_headers = getattr(response, 'headers', {}) or {}
-        headers_lower = {k.lower(): v for k, v in resp_headers.items()}
-        request_id = headers_lower.get('x-request-id') or headers_lower.get('x-ms-gateway-requestid')
+        request_id = response.headers["x-request-id"]
         state_properties_json = f'{{"TID":"{request_id}"}}'.encode("ascii")
         state_properties = (
             base64.urlsafe_b64encode(state_properties_json)
@@ -267,14 +156,14 @@ class RemehaHomeAPI:
             .rstrip("=")
         )
 
-        csrf_token = None
-        try:
-            for cookie in self._cookie_jar:
-                if getattr(cookie, 'name', '') == 'x-ms-cpim-csrf':
-                    csrf_token = cookie.value
-                    break
-        except Exception:
-            csrf_token = None
+        csrf_token = next(
+            cookie.value
+            for cookie in self._session.cookies
+            if (
+                cookie.name == "x-ms-cpim-csrf"
+                and cookie.domain == ".remehalogin.bdrthermea.net"
+            )
+        )
 
         try:
             response = self._request_with_retry(
@@ -292,8 +181,9 @@ class RemehaHomeAPI:
                 },
             )
             response.raise_for_status()
-        except Exception as e:
-            Domoticz.Error(f"Error during GET request for SelfAsserted: {type(e).__name__}: {e}")
+        except requests.exceptions.RequestException as e:
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"Error during GET request for SelfAsserted: {type(e).__name__}: {reason}")
             return None
         except Exception as e:
             Domoticz.Error(f"Unexpected error during GET request: {str(e)}")
@@ -318,8 +208,9 @@ class RemehaHomeAPI:
                 allow_redirects=False,
             )
             response.raise_for_status()
-        except Exception as e:
-            Domoticz.Error(f"Error during GET request for CombinedSigninAndSignup: {type(e).__name__}: {e}")
+        except requests.exceptions.RequestException as e:
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"Error during GET request for CombinedSigninAndSignup: {type(e).__name__}: {reason}")
             return None
         except Exception as e:
             Domoticz.Error(f"Unexpected error during GET request: {str(e)}")
@@ -329,21 +220,15 @@ class RemehaHomeAPI:
             Domoticz.Error(f"Error received from server (signin_2): {response.status_code}")
             return None
 
-        resp_headers = getattr(response, 'headers', {}) or {}
-        headers_lower = {k.lower(): v for k, v in resp_headers.items()}
-        location_value = headers_lower.get('location', '')
-        if not location_value:
+        parsed_callback_url = urllib.parse.urlparse(response.headers["location"])
+        if parsed_callback_url is None:
             Domoticz.Error("Invalid response, check authorization")
-            Domoticz.Log(f"CombinedSigninAndSignup headers: {resp_headers}")
             return None
-        parsed_callback_url = urllib.parse.urlparse(location_value)
         query_string_dict = urllib.parse.parse_qs(parsed_callback_url.query)
         if "code" not in query_string_dict:
             Domoticz.Error("Invalid response, check authorization")
-            Domoticz.Log(f"Parsed callback URL: {parsed_callback_url}")
             return None
-        # parse_qs returns lists for each key; take the first value
-        authorization_code = query_string_dict["code"][0]
+        authorization_code = query_string_dict["code"]
 
         grant_params = {
             "grant_type": "authorization_code",
@@ -371,8 +256,9 @@ class RemehaHomeAPI:
                 )
             response.raise_for_status()
             response_json = response.json()
-        except Exception as e:
-            Domoticz.Error(f"new access token error: {type(e).__name__}: {e}")
+        except requests.exceptions.RequestException as e:
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"new access token error: {type(e).__name__}: {reason}")
             return None
         except Exception as e:
             Domoticz.Error(f"new access token error: {e}")
@@ -380,12 +266,8 @@ class RemehaHomeAPI:
         return response_json
 
     def cleanup(self):
-        # Cleanup session resources (cookiejar used; nothing to close)
-        try:
-            # clear cookies
-            self._cookie_jar.clear()
-        except Exception:
-            pass
+        # Cleanup session resources
+        self._session.close()
 
     def update_devices(self, access_token):
         # Update Domoticz devices with data from Remeha Home
@@ -490,6 +372,11 @@ class RemehaHomeAPI:
                     Devices[13].Update(nValue=0, sValue="Off")
             else:
                 Devices[13].Update(nValue=0, sValue="Off")
+
+        except requests.exceptions.RequestException as e:
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"Error during GET request for dashboard: {type(e).__name__}: {reason}")
+            return None
 
         except Exception as e:
             Domoticz.Error(f"Error making GET request: {e}")
@@ -724,23 +611,21 @@ class RemehaHomeAPI:
         try:
             if str(value_firePlaceModeActive) == "True": # Fireplace mode currently on
                 json_data = {"fireplaceModeActive": False}
-                response = self._request_with_retry(
-                    "post",
+                response = requests.post(
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/fireplacemode',
                     headers=headers,
-                    json=json_data,
-                )
+                    json=json_data
+                    )
                 response.raise_for_status()
                 Devices[13].Update(nValue=0, sValue="Off")
                 Domoticz.Log("Fireplace Mode succesfully set to false")
             elif str(value_firePlaceModeActive) == "False": # Fireplace mode currently off
                 json_data = {"fireplaceModeActive": True}
-                response = self._request_with_retry(
-                    "post",
+                response = requests.post(
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/fireplacemode',
                     headers=headers,
-                    json=json_data,
-                )
+                    json=json_data
+                    )
                 response.raise_for_status()
                 Devices[13].Update(nValue=1, sValue="On")
                 Domoticz.Log("Fireplace Mode succesfully set to true")
