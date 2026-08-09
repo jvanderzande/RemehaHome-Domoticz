@@ -431,7 +431,11 @@ class RemehaHomeAPI:
         total_heating_energy_delivered_monthly = None
 
         try:
-            yearly_response = requests.get(yearly_url, headers=headers, timeout=30)
+            yearly_response = self._request_with_retry(
+                "get",
+                yearly_url,
+                headers=headers
+            )
             yearly_response.raise_for_status()
             yearly_data = yearly_response.json()
 
@@ -459,7 +463,12 @@ class RemehaHomeAPI:
         try:
             monthly_url = f"https://api.bdrthermea.net/Mobile/api/appliances/{appliance_id}/energyconsumption/monthly?startDate={datetime.datetime.now().year}-01-01T00:00:00.000Z&endDate={end_of_current_month.strftime('%Y-%m-%dT00:00:00.000Z')}"
             #print(monthly_url)
-            monthly_response = requests.get(monthly_url, headers=headers, timeout=30)
+            monthly_response = self._request_with_retry(
+                "get",
+                monthly_url,
+                headers=headers
+            )
+
             monthly_response.raise_for_status()
             monthly_data = monthly_response.json()
 
@@ -509,8 +518,7 @@ class RemehaHomeAPI:
             response = self._request_with_retry(
                 "get",
                 f'https://api.bdrthermea.net/Mobile/api/appliances/{appliance_id}/energyconsumption/daily?startDate={today_string}&endDate={end_of_today_string}',
-                headers=headers,
-                timeout=30
+                headers=headers
             )
             response.raise_for_status()
             response_json = response.json()
