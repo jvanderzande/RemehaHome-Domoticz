@@ -424,8 +424,15 @@ class RemehaHomeAPI:
         last_day_of_last_year = datetime.datetime(current_year - 1, 12, 31)
         yearly_url = f"https://api.bdrthermea.net/Mobile/api/appliances/{appliance_id}/energyconsumption/yearly?startDate=1900-01-01T00:00:00.000Z&endDate={last_day_of_last_year.strftime('%Y-%m-%dT00:00:00.000Z')}"
 
+        # Initialize so a failed GET below cannot cause an UnboundLocalError later on
+        total_heating_energy_consumed_yearly = None
+        total_heating_energy_delivered_yearly = None
+        total_heating_energy_consumed_monthly = None
+        total_heating_energy_delivered_monthly = None
+
         try:
-            yearly_response = self._request_with_retry("get", yearly_url, headers=headers)
+            yearly_response = requests.get(yearly_url, headers=headers, timeout=30)
+            yearly_response.raise_for_status()
             yearly_data = yearly_response.json()
 
             # Extract "heatingEnergyConsumed" from each row in the yearly response body
@@ -438,8 +445,7 @@ class RemehaHomeAPI:
             # Energy generated
             total_heating_energy_delivered_yearly = sum(heating_energy_delivered_values_yearly)
         except Exception as e:
-            print(f"3.Error making GET request: {e}")
-            return
+            Domoticz.Error(f"Energy consumption: yearly GET failed: {e}")
 
         # Step 2: Get all results of the previous months excluding the current month
         current_month = datetime.datetime.now().month
@@ -453,7 +459,8 @@ class RemehaHomeAPI:
         try:
             monthly_url = f"https://api.bdrthermea.net/Mobile/api/appliances/{appliance_id}/energyconsumption/monthly?startDate={datetime.datetime.now().year}-01-01T00:00:00.000Z&endDate={end_of_current_month.strftime('%Y-%m-%dT00:00:00.000Z')}"
             #print(monthly_url)
-            monthly_response = self._request_with_retry("get", monthly_url, headers=headers)
+            monthly_response = requests.get(monthly_url, headers=headers, timeout=30)
+            monthly_response.raise_for_status()
             monthly_data = monthly_response.json()
 
             # Extract "heatingEnergyConsumed" from each row in the monthly response body
@@ -466,7 +473,13 @@ class RemehaHomeAPI:
             # Energy delivered
             total_heating_energy_delivered_monthly = sum(heating_energy_delivered_values_monthly)
         except Exception as e:
-            print(f"4.Error making GET request: {e}")
+            Domoticz.Error(f"Energy consumption: monthly GET failed: {e}")
+
+        # If either the yearly or the monthly retrieval failed, skip this cycle
+        # (the counters will simply update again at the next full hour)
+        if None in (total_heating_energy_consumed_yearly, total_heating_energy_delivered_yearly,
+                    total_heating_energy_consumed_monthly, total_heating_energy_delivered_monthly):
+            Domoticz.Error("Energy consumption: yearly/monthly data unavailable, skipping counter update this cycle")
             return
 
          # Combine the totals consumed
@@ -496,8 +509,10 @@ class RemehaHomeAPI:
             response = self._request_with_retry(
                 "get",
                 f'https://api.bdrthermea.net/Mobile/api/appliances/{appliance_id}/energyconsumption/daily?startDate={today_string}&endDate={end_of_today_string}',
-                headers=headers
+                headers=headers,
+                timeout=30
             )
+            response.raise_for_status()
             response_json = response.json()
 
             EnergyToday = response_json["data"][0]["heatingEnergyConsumed"]
@@ -527,7 +542,7 @@ class RemehaHomeAPI:
                 Devices[10].Update(nValue=0, sValue=str(EnergyDeliveredToday) + ";" + str(total_heating_energy_delivered))
                 Devices[12].Update(nValue=0, sValue=str(value_seasonalEfficiency), Options={"Custom": "1;SCOP"})
         except Exception as e:
-            print(f"5.Error making GET request: {e}")
+            Domoticz.Error(f"Energy consumption: daily GET failed: {e}")
 
 
     def check_token_validity(self,acces_token):
