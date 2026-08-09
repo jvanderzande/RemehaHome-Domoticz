@@ -61,6 +61,8 @@ class RemehaHomeAPI:
         if len(Devices) != 13:
             # Example: Create devices for temperature, pressure, and setpoint
             self.createDevices()
+
+        # Set the poll interval to 5 seconds and test for the set real update time in onheartbeat() to allow for longer than 30 seconds
         Domoticz.Heartbeat(5)
         Domoticz.Log(f"Poll Interval: {self.poll_interval}")
 
@@ -379,7 +381,7 @@ class RemehaHomeAPI:
             return None
 
         except Exception as e:
-            Domoticz.Error(f"Error making GET request: {e}")
+            Domoticz.Error(f"1.Error making GET request: {e}")
 
     def set_temperature(self, access_token, room_temperature_setpoint):
         # Set temperature in the external system using a POST request
@@ -407,7 +409,7 @@ class RemehaHomeAPI:
             response.raise_for_status()
             Domoticz.Log(f"Temperature set successfully to {room_temperature_setpoint}")
         except Exception as e:
-            Domoticz.Error(f"Error making POST request: {e}")
+            Domoticz.Error(f"2.Error making POST request: {e}")
 
     def getDailyEnergyConsumption(self, access_token):
         headers = {
@@ -436,7 +438,8 @@ class RemehaHomeAPI:
             # Energy generated
             total_heating_energy_delivered_yearly = sum(heating_energy_delivered_values_yearly)
         except Exception as e:
-            print(f"Error making GET request: {e}")
+            print(f"3.Error making GET request: {e}")
+            return
 
         # Step 2: Get all results of the previous months excluding the current month
         current_month = datetime.datetime.now().month
@@ -463,7 +466,8 @@ class RemehaHomeAPI:
             # Energy delivered
             total_heating_energy_delivered_monthly = sum(heating_energy_delivered_values_monthly)
         except Exception as e:
-            print(f"Error making GET request: {e}")
+            print(f"4.Error making GET request: {e}")
+            return
 
          # Combine the totals consumed
         total_heating_energy_consumed = (
@@ -523,7 +527,7 @@ class RemehaHomeAPI:
                 Devices[10].Update(nValue=0, sValue=str(EnergyDeliveredToday) + ";" + str(total_heating_energy_delivered))
                 Devices[12].Update(nValue=0, sValue=str(value_seasonalEfficiency), Options={"Custom": "1;SCOP"})
         except Exception as e:
-            print(f"Error making GET request: {e}")
+            print(f"5.Error making GET request: {e}")
 
 
     def check_token_validity(self,acces_token):
@@ -635,12 +639,13 @@ class RemehaHomeAPI:
             return "invalid"
 
     def onheartbeat(self):
-        # Check update interval avoiding setting heartbeat > 30
+        # Check update interval ourselves to avoid error for heartbeat longer than 30 seconds cause hardware errors in domoticz
         if self.LastWebUpdate is not None and (datetime.datetime.now() - self.LastWebUpdate).total_seconds() < self.poll_interval:
             return
         self.LastWebUpdate = datetime.datetime.now()
         Domoticz.Log("Remeha Home plugin heartbeat")
         current_time_minutes = time.localtime().tm_min
+        current_time_seconds = time.localtime().tm_sec
 
         # Check if the access token exists in the instance variable self and if it's valid
         access_token = getattr(self, 'access_token', None)
@@ -649,10 +654,10 @@ class RemehaHomeAPI:
                 self.update_devices(access_token)
                 # Check if the current time in minutes is 5, then get the daily energy consumption
                 # The API seems to be only updated once an hour so no use to run it more often.
-                if current_time_minutes == 5:
-                    self.getDailyEnergyConsumption(access_token)
             except Exception as e:
-                Domoticz.Error(f"Error making POST request: {e}")
+                Domoticz.Error(f"6.Error making POST request: {e}")
+            if current_time_minutes == 5 and current_time_seconds < 30:
+                self.getDailyEnergyConsumption(access_token)
         else:
             # Access token is expired or doesn't exist in the session, get a new one
             result = self.resolve_external_data()
@@ -664,10 +669,10 @@ class RemehaHomeAPI:
                     self.update_devices(access_token)
                     # Check if the current time in minutes is 5, then get the daily energy consumption
                     # The API seems to be only updated once an hour so no use to run it more often.
-                    if current_time_minutes == 5:
+                    if current_time_minutes == 5 and current_time_seconds < 30:
                         self.getDailyEnergyConsumption(access_token)
                 except Exception as e:
-                    Domoticz.Error(f"Error making POST request: {e}")
+                    Domoticz.Error(f"7.Error making POST request: {e}")
         self.cleanup()
 
     def oncommand(self, unit, command, level, hue):
@@ -684,7 +689,7 @@ class RemehaHomeAPI:
                 elif unit == 13: # fireplace mode
                     self.fireplacemode(access_token, level)
             except Exception as e:
-                Domoticz.Error(f"Error making POST request: {e}")
+                Domoticz.Error(f"8.Error making POST request: {e}")
         else:
              # Access token is expired or doesn't exist in the session, get a new one
             result = self.resolve_external_data()
@@ -698,7 +703,7 @@ class RemehaHomeAPI:
                             room_temperature_setpoint = float(level)
                             self.set_temperature(access_token, room_temperature_setpoint)
                 except Exception as e:
-                    Domoticz.Error(f"Error making POST request: {e}")
+                    Domoticz.Error(f"9.Error making POST request: {e}")
         self.cleanup()
 
 # Create an instance of the RemehaHomeAPI class
