@@ -1,5 +1,5 @@
 """
-<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz" version="1.4.0">
+<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz" version="1.4.1">
     <params>
         <param field="Mode1" label="Email" width="200px" required="true"/>
         <param field="Mode2" label="Password" width="200px" password="true" required="true"/>
@@ -31,17 +31,38 @@ class RemehaHomeAPI:
         self._session = requests.Session()
         self.email = ""
         self.password = ""
+        self.LastWebUpdate = None
+
+
+    def _request_with_retry(self, method, url, max_retries=3, timeout=5, **kwargs):
+        """Helper method to make requests with retry logic and 5 second timeout."""
+        for attempt in range(max_retries):
+            try:
+                if method.lower() == 'get':
+                    response = self._session.get(url, timeout=timeout, **kwargs)
+                elif method.lower() == 'post':
+                    response = self._session.post(url, timeout=timeout, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported method: {method}")
+                return response
+            except requests.exceptions.RequestException as e:
+                if attempt == max_retries - 1:
+                    raise
+                Domoticz.Log(f"Retry attempt {attempt + 1}/{max_retries} for {method.upper()} {url}: {e}")
+        return None
 
     def onStart(self):
         # Called when the plugin is started
         Domoticz.Log("Remeha Home Plugin started.")
-        
+
         # Read options from Domoticz GUI
         self.readOptions()
         # Check if there are no existing devices
         if len(Devices) != 13:
             # Example: Create devices for temperature, pressure, and setpoint
             self.createDevices()
+
+        # Set the poll interval to 5 seconds and test for the set real update time in onheartbeat() to allow for longer than 30 seconds
         Domoticz.Heartbeat(5)
         Domoticz.Log(f"Poll Interval: {self.poll_interval}")
 
@@ -57,7 +78,7 @@ class RemehaHomeAPI:
             self.password = Parameters["Mode2"]
         else:
             Domoticz.Error("Password not configured in the Domoticz plugin configuration.")
-        self.poll_interval = int(Parameters["Mode3"])            
+        self.poll_interval = int(Parameters["Mode3"])
         if self.poll_interval < 30:
             self.poll_interval = 30
         if self.poll_interval > 300:
@@ -96,25 +117,34 @@ class RemehaHomeAPI:
             .rstrip("=")
         )
 
-        response = self._session.get(
-            "https://remehalogin.bdrthermea.net/bdrb2cprod.onmicrosoft.com/oauth2/v2.0/authorize",
-            params={
-                "response_type": "code",
-                "client_id": "6ce007c6-0628-419e-88f4-bee2e6418eec",
-                "redirect_uri": "com.b2c.remehaapp://login-callback",
-                "scope": "openid https://bdrb2cprod.onmicrosoft.com/iotdevice/user_impersonation offline_access",
-                "state": random_state,
-                "code_challenge": code_challenge_sha256,
-                "code_challenge_method": "S256",
-                "p": "B2C_1A_RPSignUpSignInNewRoomV3.1",
-                "brand": "remeha",
-                "lang": "en",
-                "nonce": "defaultNonce",
-                "prompt": "login",
-                "signUp": "False",
-            },
-        )
-        response.raise_for_status()
+        try:
+            response = self._request_with_retry(
+                "get",
+                "https://remehalogin.bdrthermea.net/bdrb2cprod.onmicrosoft.com/oauth2/v2.0/authorize",
+                params={
+                    "response_type": "code",
+                    "client_id": "6ce007c6-0628-419e-88f4-bee2e6418eec",
+                    "redirect_uri": "com.b2c.remehaapp://login-callback",
+                    "scope": "openid https://bdrb2cprod.onmicrosoft.com/iotdevice/user_impersonation offline_access",
+                    "state": random_state,
+                    "code_challenge": code_challenge_sha256,
+                    "code_challenge_method": "S256",
+                    "p": "B2C_1A_RPSignUpSignInNewRoomV3.1",
+                    "brand": "remeha",
+                    "lang": "en",
+                    "nonce": "defaultNonce",
+                    "prompt": "login",
+                    "signUp": "False",
+                },
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"Authorize error: {type(e).__name__}: {reason}")
+            return None
+        except Exception as e:
+            Domoticz.Error(f"Unexpected error during GET request: {str(e)}")
+            return None
 
         if response.status_code != 200:
             Domoticz.Error(f"Error received from server (authorize): {response.status_code}")
@@ -137,38 +167,56 @@ class RemehaHomeAPI:
             )
         )
 
-        response = self._session.post(
-            "https://remehalogin.bdrthermea.net/bdrb2cprod.onmicrosoft.com/B2C_1A_RPSignUpSignInNewRoomv3.1/SelfAsserted",
-            params={
-                "tx": "StateProperties=" + state_properties,
-                "p": "B2C_1A_RPSignUpSignInNewRoomv3.1",
-            },
-            headers={"x-csrf-token": csrf_token},
-            data={
-                "request_type": "RESPONSE",
-                "signInName": self.email,
-                "password": self.password,
-            },
-        )
-        response.raise_for_status()
-        
+        try:
+            response = self._request_with_retry(
+                "post",
+                "https://remehalogin.bdrthermea.net/bdrb2cprod.onmicrosoft.com/B2C_1A_RPSignUpSignInNewRoomv3.1/SelfAsserted",
+                params={
+                    "tx": "StateProperties=" + state_properties,
+                    "p": "B2C_1A_RPSignUpSignInNewRoomv3.1",
+                },
+                headers={"x-csrf-token": csrf_token},
+                data={
+                    "request_type": "RESPONSE",
+                    "signInName": self.email,
+                    "password": self.password,
+                },
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"Error during GET request for SelfAsserted: {type(e).__name__}: {reason}")
+            return None
+        except Exception as e:
+            Domoticz.Error(f"Unexpected error during GET request: {str(e)}")
+            return None
+
         if response.status_code != 200:
             Domoticz.Error(f"Error received from server (signin_1): {response.status_code}")
             return None
 
         response_json = json.loads(response.text)
 
-        response = self._session.get(
-            "https://remehalogin.bdrthermea.net/bdrb2cprod.onmicrosoft.com/B2C_1A_RPSignUpSignInNewRoomv3.1/api/CombinedSigninAndSignup/confirmed",
-            params={
-                "rememberMe": "false",
-                "csrf_token": csrf_token,
-                "tx": "StateProperties=" + state_properties,
-                "p": "B2C_1A_RPSignUpSignInNewRoomv3.1",
-            },
-            allow_redirects=False,
-        )
-        response.raise_for_status()
+        try:
+            response = self._request_with_retry(
+                "get",
+                "https://remehalogin.bdrthermea.net/bdrb2cprod.onmicrosoft.com/B2C_1A_RPSignUpSignInNewRoomv3.1/api/CombinedSigninAndSignup/confirmed",
+                params={
+                    "rememberMe": "false",
+                    "csrf_token": csrf_token,
+                    "tx": "StateProperties=" + state_properties,
+                    "p": "B2C_1A_RPSignUpSignInNewRoomv3.1",
+                },
+                allow_redirects=False,
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"Error during GET request for CombinedSigninAndSignup: {type(e).__name__}: {reason}")
+            return None
+        except Exception as e:
+            Domoticz.Error(f"Unexpected error during GET request: {str(e)}")
+            return None
 
         if response.status_code >= 400:
             Domoticz.Error(f"Error received from server (signin_2): {response.status_code}")
@@ -195,11 +243,13 @@ class RemehaHomeAPI:
 
     def _request_new_token(self, grant_params):
         # Logic for requesting a new access token
-        with self._session.post(
-            "https://remehalogin.bdrthermea.net/bdrb2cprod.onmicrosoft.com/oauth2/v2.0/token?p=B2C_1A_RPSignUpSignInNewRoomV3.1",
-            data=grant_params,
-            allow_redirects=True,
-        ) as response:
+        try:
+            response = self._request_with_retry(
+                "post",
+                "https://remehalogin.bdrthermea.net/bdrb2cprod.onmicrosoft.com/oauth2/v2.0/token?p=B2C_1A_RPSignUpSignInNewRoomV3.1",
+                data=grant_params,
+                allow_redirects=True,
+            )
             if response.status_code != 200:
                 response_json = response.json()
                 Domoticz.Log(
@@ -208,6 +258,13 @@ class RemehaHomeAPI:
                 )
             response.raise_for_status()
             response_json = response.json()
+        except requests.exceptions.RequestException as e:
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"new access token error: {type(e).__name__}: {reason}")
+            return None
+        except Exception as e:
+            Domoticz.Error(f"new access token error: {e}")
+
         return response_json
 
     def cleanup(self):
@@ -220,13 +277,13 @@ class RemehaHomeAPI:
             "Authorization": f"Bearer {access_token}",
             "Ocp-Apim-Subscription-Key": "df605c5470d846fc91e848b1cc653ddf",
         }
-        
+
         global appliance_id
         global climate_zone_id
         global firePlaceModeActive
         global value_firePlaceModeActive
 
-        
+
         # Initialize global variables if not already set
         appliance_id = globals().get('appliance_id', None)
         climate_zone_id = globals().get('climate_zone_id', None)
@@ -235,7 +292,8 @@ class RemehaHomeAPI:
 
         #Domoticz.Log("Getting device states...")
         try:
-            response = self._session.get(
+            response = self._request_with_retry(
+                "get",
                 "https://api.bdrthermea.net/Mobile/api/homes/dashboard", headers=headers
             )
 
@@ -246,17 +304,17 @@ class RemehaHomeAPI:
                 return None
 
             response_json = response.json()
-            
+
             # declaring value_dhwTemperature to not break if the value is not present.
             value_dhwTemperature = None
-            
-            
+
+
             # Update Domoticz devices here based on the response_json
             value_room_temperature = response_json["appliances"][0]["climateZones"][0]["roomTemperature"]
             if response_json["appliances"][0]["capabilityOutdoorTemperature"] is True:
                 if response_json["appliances"][0]["outdoorTemperatureInformation"]["outdoorTemperatureSource"] == 'Wired':
                     value_outdoor_temperature = response_json["appliances"][0]["outdoorTemperatureInformation"]["applianceOutdoorTemperature"]
-                    #Domoticz.Error(f"Device outdoor temp expected: {value_outdoor_temperature}")  
+                    #Domoticz.Error(f"Device outdoor temp expected: {value_outdoor_temperature}")
                 else :
                     value_outdoor_temperature = response_json["appliances"][0]["outdoorTemperatureInformation"]["cloudOutdoorTemperature"]
                     #Domoticz.Error(f"Internet temp expected : {value_outdoor_temperature}")
@@ -267,13 +325,13 @@ class RemehaHomeAPI:
             value_zoneMode = response_json["appliances"][0]["climateZones"][0]["zoneMode"]
             value_waterPressureOK = response_json["appliances"][0]["waterPressureOK"]
             value_status = response_json["appliances"][0]["climateZones"][0]["activeComfortDemand"]
-            
+
             # set globals
             if climate_zone_id is None:
-                climate_zone_id = response_json["appliances"][0]["climateZones"][0]["climateZoneId"]            
+                climate_zone_id = response_json["appliances"][0]["climateZones"][0]["climateZoneId"]
             if appliance_id is None:
                 appliance_id = response_json["appliances"][0]["applianceId"]
-            
+
             try:
                 value_dhwTemperature = response_json["appliances"][0]["hotWaterZones"][0]["dhwTemperature"]
             except:
@@ -316,10 +374,14 @@ class RemehaHomeAPI:
                     Devices[13].Update(nValue=0, sValue="Off")
             else:
                 Devices[13].Update(nValue=0, sValue="Off")
-        
+
+        except requests.exceptions.RequestException as e:
+            reason = getattr(e, 'reason', e)
+            Domoticz.Error(f"Error during GET request for dashboard: {type(e).__name__}: {reason}")
+            return None
 
         except Exception as e:
-            Domoticz.Error(f"Error making GET request: {e}")
+            Domoticz.Error(f"1.Error making GET request: {e}")
 
     def set_temperature(self, access_token, room_temperature_setpoint):
         # Set temperature in the external system using a POST request
@@ -331,22 +393,24 @@ class RemehaHomeAPI:
         try:
             json_data = {'roomTemperatureSetPoint': room_temperature_setpoint}
             if Devices[8].sValue == "10": #If zonemode is manual then adjust the manual temp
-                response = self._session.post(
+                response = self._request_with_retry(
+                    "post",
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/manual',
                     headers=headers,
-                    json=json_data
+                    json=json_data,
                     )
             else: # zonemode is not manual then temporary override
-                response = self._session.post(
+                response = self._request_with_retry(
+                    "post",
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/temporary-override',
                     headers=headers,
-                    json=json_data
+                    json=json_data,
                     )
             response.raise_for_status()
             Domoticz.Log(f"Temperature set successfully to {room_temperature_setpoint}")
         except Exception as e:
-            Domoticz.Error(f"Error making POST request: {e}")
-    
+            Domoticz.Error(f"2.Error making POST request: {e}")
+
     def getDailyEnergyConsumption(self, access_token):
         headers = {
             'Authorization': f'Bearer {access_token}',
@@ -359,7 +423,7 @@ class RemehaHomeAPI:
         # Step 1: Get all results of the previous years until the last day of the previous year
         last_day_of_last_year = datetime.datetime(current_year - 1, 12, 31)
         yearly_url = f"https://api.bdrthermea.net/Mobile/api/appliances/{appliance_id}/energyconsumption/yearly?startDate=1900-01-01T00:00:00.000Z&endDate={last_day_of_last_year.strftime('%Y-%m-%dT00:00:00.000Z')}"
-        
+
         # Initialize so a failed GET below cannot cause an UnboundLocalError later on
         total_heating_energy_consumed_yearly = None
         total_heating_energy_delivered_yearly = None
@@ -367,7 +431,11 @@ class RemehaHomeAPI:
         total_heating_energy_delivered_monthly = None
 
         try:
-            yearly_response = requests.get(yearly_url, headers=headers, timeout=30)
+            yearly_response = self._request_with_retry(
+                "get",
+                yearly_url,
+                headers=headers
+            )
             yearly_response.raise_for_status()
             yearly_data = yearly_response.json()
 
@@ -390,15 +458,20 @@ class RemehaHomeAPI:
         last_day_of_current_month = calendar.monthrange(current_year, current_month)[1]
 
         # Create a datetime object for the last day of the current month
-        end_of_current_month = datetime.datetime(current_year, current_month, last_day_of_current_month) 
-        
+        end_of_current_month = datetime.datetime(current_year, current_month, last_day_of_current_month)
+
         try:
             monthly_url = f"https://api.bdrthermea.net/Mobile/api/appliances/{appliance_id}/energyconsumption/monthly?startDate={datetime.datetime.now().year}-01-01T00:00:00.000Z&endDate={end_of_current_month.strftime('%Y-%m-%dT00:00:00.000Z')}"
             #print(monthly_url)
-            monthly_response = requests.get(monthly_url, headers=headers, timeout=30)
+            monthly_response = self._request_with_retry(
+                "get",
+                monthly_url,
+                headers=headers
+            )
+
             monthly_response.raise_for_status()
             monthly_data = monthly_response.json()
-      
+
             # Extract "heatingEnergyConsumed" from each row in the monthly response body
             heating_energy_consumed_values_monthly = [entry["heatingEnergyConsumed"] for entry in monthly_data["data"]]
             # Energy generated
@@ -427,12 +500,12 @@ class RemehaHomeAPI:
         total_heating_energy_delivered = (
         total_heating_energy_delivered_yearly +
         total_heating_energy_delivered_monthly
-        ) 
-        
+        )
+
         total_heating_energy_consumed = total_heating_energy_consumed * 1000
         total_heating_energy_delivered = total_heating_energy_delivered * 1000
-        
-        
+
+
         # Get the start and end date for today
         today_start = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = datetime.datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
@@ -440,38 +513,38 @@ class RemehaHomeAPI:
         # Format the start and end dates in the required format
         today_string = today_start.strftime('%Y-%m-%dT%H:%M:%S.000Z')
         end_of_today_string = today_end.strftime('%Y-%m-%dT%H:%M:%S.999Z')
-            
+
         try:
-            response = requests.get(
+            response = self._request_with_retry(
+                "get",
                 f'https://api.bdrthermea.net/Mobile/api/appliances/{appliance_id}/energyconsumption/daily?startDate={today_string}&endDate={end_of_today_string}',
-                headers=headers,
-                timeout=30
+                headers=headers
             )
             response.raise_for_status()
             response_json = response.json()
-            
+
             EnergyToday = response_json["data"][0]["heatingEnergyConsumed"]
-            
+
             EnergyDeliveredToday = response_json["data"][0]["heatingEnergyDelivered"]
-            
+
             # Initialize the variable to 1, default value if producerType is not "HeatPumpAirSource"
-            value_seasonalEfficiency = 1         
-            
+            value_seasonalEfficiency = 1
+
             # Iterate over the producers to find the matching producerType
             for producer in response_json['data'][0]['producerPerformanceStatistics']['producers']:
                 if producer['producerType'] == "HeatPumpAirSource":
                     value_seasonalEfficiency = producer['seasonalEfficiency']
                     break  # Exit loop once the producer is found
-            
+
             EnergyToday = EnergyToday * 1000
             EnergyDeliveredToday = EnergyDeliveredToday * 1000
-            
+
             # Split the string based on the semicolon
             split_values = (Devices[6].sValue).split(";")
             # Check the value before the semicolon against another string
             DomoticzCurrentConsume = split_values[0]
-            
-            if datetime.datetime.now().hour not in (0, 1, 2):         
+
+            if datetime.datetime.now().hour not in (0, 1, 2):
                 #if str(DomoticzCurrentConsume) != str(EnergyToday):
                 Devices[6].Update(nValue=0, sValue=str(EnergyToday) + ";" + str(total_heating_energy_consumed))
                 Devices[10].Update(nValue=0, sValue=str(EnergyDeliveredToday) + ";" + str(total_heating_energy_delivered))
@@ -488,7 +561,7 @@ class RemehaHomeAPI:
             decoded_payload = base64.b64decode(payload + '===').decode('utf-8')
             # Converting the decoded payload to a dictionary
             payload_dict = eval(decoded_payload)
-        
+
             # Extracting the expiration timestamp
             expiration_timestamp = payload_dict.get('exp')
             if expiration_timestamp:
@@ -505,7 +578,7 @@ class RemehaHomeAPI:
         except Exception as e:
             print("Error:", e)
         return "invalid"
-    
+
     def zonemode(self, access_token, level):
         headers = {
             'Authorization': f'Bearer {access_token}',
@@ -514,7 +587,8 @@ class RemehaHomeAPI:
         try:
             if level == 0: # Scheduling mode
                 json_data = {"heatingProgramId": 1}
-                response = requests.post(
+                response = self._request_with_retry(
+                    "post",
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/schedule',
                     headers=headers,
                     json=json_data
@@ -524,7 +598,8 @@ class RemehaHomeAPI:
             elif level == 10: # Manual mode
                 room_temperature_setpoint = float(Devices[4].sValue)
                 json_data = {"roomTemperatureSetPoint": room_temperature_setpoint}
-                response = requests.post(
+                response = self._request_with_retry(
+                    "post",
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/manual',
                     headers=headers,
                     json=json_data
@@ -534,25 +609,27 @@ class RemehaHomeAPI:
             elif level == 20: # TemporaryOverride mode
                 room_temperature_setpoint = float(Devices[4].sValue)
                 json_data = {'roomTemperatureSetPoint': room_temperature_setpoint}
-                response = self._session.post(
+                response = self._request_with_retry(
+                    "post",
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/temporary-override',
                     headers=headers,
-                    json=json_data
+                    json=json_data,
                     )
                 response.raise_for_status()
                 Domoticz.Log("Zonemode succesfully set to TemporaryOverride")
             elif level == 30: # FrostProtection mode
-                response = self._session.post(
+                response = self._request_with_retry(
+                    "post",
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/anti-frost',
-                    headers=headers
-                    )   
+                    headers=headers,
+                    )
                 response.raise_for_status()
                 Domoticz.Log("Zonemode succesfully set to FrostProtection")
-                
+
         except Exception as e:
                 print("Error:", e)
                 return "invalid"
-    
+
     def fireplacemode(self, access_token, fireplacemode):
         headers = {
             'Authorization': f'Bearer {access_token}',
@@ -569,7 +646,7 @@ class RemehaHomeAPI:
                 response.raise_for_status()
                 Devices[13].Update(nValue=0, sValue="Off")
                 Domoticz.Log("Fireplace Mode succesfully set to false")
-            elif str(value_firePlaceModeActive) == "False": # Fireplace mode currently off                
+            elif str(value_firePlaceModeActive) == "False": # Fireplace mode currently off
                 json_data = {"fireplaceModeActive": True}
                 response = requests.post(
                     f'https://api.bdrthermea.net/Mobile/api/climate-zones/{climate_zone_id}/modes/fireplacemode',
@@ -579,17 +656,20 @@ class RemehaHomeAPI:
                 response.raise_for_status()
                 Devices[13].Update(nValue=1, sValue="On")
                 Domoticz.Log("Fireplace Mode succesfully set to true")
-                
+
         except Exception as e:
             print("Error:", e)
             return "invalid"
-    
+
     def onheartbeat(self):
-        # Heartbeat function called periodically
-        Domoticz.Heartbeat(self.poll_interval)
+        # Check update interval ourselves to avoid error for heartbeat longer than 30 seconds cause hardware errors in domoticz
+        if self.LastWebUpdate is not None and (datetime.datetime.now() - self.LastWebUpdate).total_seconds() < self.poll_interval:
+            return
+        self.LastWebUpdate = datetime.datetime.now()
         Domoticz.Log("Remeha Home plugin heartbeat")
         current_time_minutes = time.localtime().tm_min
-        
+        current_time_seconds = time.localtime().tm_sec
+
         # Check if the access token exists in the instance variable self and if it's valid
         access_token = getattr(self, 'access_token', None)
         if access_token and self.check_token_validity(access_token) == "valid":
@@ -597,10 +677,10 @@ class RemehaHomeAPI:
                 self.update_devices(access_token)
                 # Check if the current time in minutes is 5, then get the daily energy consumption
                 # The API seems to be only updated once an hour so no use to run it more often.
-                if current_time_minutes == 5:
-                    self.getDailyEnergyConsumption(access_token)
             except Exception as e:
-                Domoticz.Error(f"Error making POST request: {e}")
+                Domoticz.Error(f"6.Error making POST request: {e}")
+            if current_time_minutes == 5 and current_time_seconds < 30:
+                self.getDailyEnergyConsumption(access_token)
         else:
             # Access token is expired or doesn't exist in the session, get a new one
             result = self.resolve_external_data()
@@ -612,10 +692,10 @@ class RemehaHomeAPI:
                     self.update_devices(access_token)
                     # Check if the current time in minutes is 5, then get the daily energy consumption
                     # The API seems to be only updated once an hour so no use to run it more often.
-                    if current_time_minutes == 5:
+                    if current_time_minutes == 5 and current_time_seconds < 30:
                         self.getDailyEnergyConsumption(access_token)
                 except Exception as e:
-                    Domoticz.Error(f"Error making POST request: {e}")
+                    Domoticz.Error(f"7.Error making POST request: {e}")
         self.cleanup()
 
     def oncommand(self, unit, command, level, hue):
@@ -632,7 +712,7 @@ class RemehaHomeAPI:
                 elif unit == 13: # fireplace mode
                     self.fireplacemode(access_token, level)
             except Exception as e:
-                Domoticz.Error(f"Error making POST request: {e}")
+                Domoticz.Error(f"8.Error making POST request: {e}")
         else:
              # Access token is expired or doesn't exist in the session, get a new one
             result = self.resolve_external_data()
@@ -646,7 +726,7 @@ class RemehaHomeAPI:
                             room_temperature_setpoint = float(level)
                             self.set_temperature(access_token, room_temperature_setpoint)
                 except Exception as e:
-                    Domoticz.Error(f"Error making POST request: {e}")
+                    Domoticz.Error(f"9.Error making POST request: {e}")
         self.cleanup()
 
 # Create an instance of the RemehaHomeAPI class
