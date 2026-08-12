@@ -5,7 +5,7 @@ This Domoticz Python plugin integrates with the Remeha Home API, providing real-
 
 ## Credits
 This plugin is based on the Remeha Home Python library by Michiel Visser, available at [GitHub - Remeha Home Library](https://github.com/msvisser/remeha_home).
-It was further developed by Tuk90 & GizMoCuzand now transferred to jvanderzande.
+It was further developed by Tuk90, GizMoCuz. jvanderzande added the T6 Thermostat option and added some code to avoid hardware failures due to slow responses from the Remeha website.
 
 ## Installation
 1. Clone this repository into the Domoticz plugins folder using the following command: git clone https://github.com/jvanderzande/RemehaHome-Domoticz.git
@@ -16,6 +16,9 @@ It was further developed by Tuk90 & GizMoCuzand now transferred to jvanderzande.
 - **Email:** Your Remeha Home account email.
 - **Password:** Your Remeha Home account password.
 - **Poll Interval:** Poll Interval (default 30 seconds). If you choose an amount higher than 30 seconds then set the value of Data Timeout to a higher value to prevent your logs from being flooded with 'timeout' error messages.
+- **Combined TempSettemp:** 
+  - **Yes** means you will get the new Thermostat6 device which combines the temperature and SetTemp into one device.
+  - **No** means you will get 2 separate devices: Thermostat and Temperature device.
 
 ## Devices
 The plugin creates the following devices in Domoticz:

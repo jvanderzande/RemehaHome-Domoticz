@@ -1,5 +1,5 @@
 """
-<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz" version="1.4.1">
+<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz/jvdzande" version="1.4.2">
     <params>
         <param field="Mode1" label="Email" width="200px" required="true"/>
         <param field="Mode2" label="Password" width="200px" password="true" required="true"/>
@@ -9,6 +9,12 @@
                 <option label="1 minute" value="60" default="true"/>
                 <option label="2 minutes" value="120"/>
                 <option label="5 minutes" value="300"/>
+            </options>
+        </param>
+        <param field="Mode4" label="Combined TempSettemp" width="100px" required="true">
+            <options>
+                <option label="Yes" value="Y" default="true"/>
+                <option label="No" value="N"/>
             </options>
         </param>
     </params>
@@ -24,6 +30,7 @@ import requests
 import datetime
 import calendar
 import time
+import re
 
 class RemehaHomeAPI:
     def __init__(self):
@@ -31,6 +38,9 @@ class RemehaHomeAPI:
         self._session = requests.Session()
         self.email = ""
         self.password = ""
+        self.domoticzbuild = 0
+        self.usecombined = False
+        self.poll_interval = 0
         self.LastWebUpdate = None
 
 
@@ -53,14 +63,12 @@ class RemehaHomeAPI:
 
     def onStart(self):
         # Called when the plugin is started
-        Domoticz.Log("Remeha Home Plugin started.")
+        Domoticz.Log("Remeha Home Plugin started. Domoticz version: " + Parameters["DomoticzVersion"])
 
         # Read options from Domoticz GUI
         self.readOptions()
         # Check if there are no existing devices
-        if len(Devices) != 13:
-            # Example: Create devices for temperature, pressure, and setpoint
-            self.createDevices()
+        self.createDevices()
 
         # Set the poll interval to 5 seconds and test for the set real update time in onheartbeat() to allow for longer than 30 seconds
         Domoticz.Heartbeat(5)
@@ -84,24 +92,72 @@ class RemehaHomeAPI:
         if self.poll_interval > 300:
             self.poll_interval = 300
 
+        # Get DomoticzBuild number
+        DBa = re.search(r"\(build\s+(\d+)\)", Parameters["DomoticzVersion"])
+        if DBa:
+            self.domoticzbuild = int(DBa.group(1))
+        self.usecombined = (self.domoticzbuild > 16987 and Parameters["Mode4"] == "Y")
+
     def createDevices(self):
         # Declare Devices variable
         global Devices
 
         # Create devices for temperature, pressure, and setpoint
-        Domoticz.Device(Name="roomTemperature", Unit=1, TypeName="Temperature", Used=1).Create()
-        Domoticz.Device(Name="outdoorTemperature", Unit=2, TypeName="Temperature", Used=1).Create()
-        Domoticz.Device(Name="waterPressure", Unit=3, TypeName="Pressure", Used=1).Create()
-        Domoticz.Device(Name="setPoint", Unit=4, TypeName="Setpoint", Used=1).Create()
-        Domoticz.Device(Name="dhwTemperature", Unit=5, TypeName="Temperature", Used=1).Create()
-        Domoticz.Device(Name="EnergyConsumption", Unit=6, Type=243, TypeName="Kwh", Subtype=29, Used=1).Create()
-        Domoticz.Device(Name="gasCalorificValue", Unit=7, Type=243, Subtype=31, Used=1).Create()
-        Domoticz.Device(Name="zoneMode", Unit=8, TypeName="Selector Switch", Image=15, Options={"LevelNames":"Scheduling|Manual|TemporaryOverride|FrostProtection", "LevelOffHidden": "false", "SelectorStyle": "1"}, Used=1).Create()
-        Domoticz.Device(Name="waterPressureToLow", Unit=9, TypeName="Switch", Switchtype=0, Image=13, Used=1).Create()
-        Domoticz.Device(Name="EnergyDelivered", Unit=10, Type=243, TypeName="Kwh", Subtype=29, Switchtype=4, Used=1).Create()
-        Domoticz.Device(Name="Status", Unit=11, TypeName="Text", Image=15, Used=1).Create()
-        Domoticz.Device(Name="seasonalEfficiency", Unit=12, Type=243, Subtype=31, Used=1).Create()
-        Domoticz.Device(Name="firePlaceModeActive", Unit=13, TypeName="Switch", Switchtype=0, Image=10, Used=1).Create()
+        # Use Combined device when supported and requested in the hardware page
+        if (self.usecombined):
+            OrgSetTempName = ''
+            if 1 in Devices and Devices[1].Type != 73 :
+                Domoticz.Log(f"Deleted old Temp device: {Devices[1].Name} Type={Devices[1].Type}, SubType={Devices[1].SubType}")
+                Devices[1].Delete()
+                Domoticz.Log(f"Renamed Disabled Old SetTemp: {Devices[4].Name} ")
+                OrgSetTempName = Devices[4].Name
+                newname = "OLD_"+OrgSetTempName
+                Devices[4].Update(
+                    nValue=Devices[4].nValue,
+                    sValue=Devices[4].sValue,
+                    Name=newname,
+                    Used=0
+                )
+
+            if 1 not in Devices:
+                Domoticz.Device(Name="roomTempsetPoint", Unit=1, Type=73, Subtype=0, Used=1).Create()
+                if OrgSetTempName != '':
+                    Devices[1].Update(
+                        nValue=Devices[1].nValue,
+                        sValue=Devices[1].sValue,
+                        Name=OrgSetTempName,
+                        Used=1
+                    )
+                Domoticz.Log(f"Created combined device: {Devices[1].Name} Type={Devices[1].Type}, SubType={Devices[1].SubType}")
+        else:
+            if 1 not in Devices:
+                Domoticz.Device(Name="roomTemperature", Unit=1, TypeName="Temperature", Used=1).Create()
+                Domoticz.Log(f"Created seperate Temp device: {Devices[1].Name}")
+            if 4 not in Devices:
+                Domoticz.Device(Name="setPoint", Unit=4, TypeName="Setpoint", Used=1).Create()
+                Domoticz.Log(f"Created seperate SetTemp device: {Devices[4].Name}")
+            if 2 not in Devices:
+                Domoticz.Device(Name="outdoorTemperature", Unit=2, TypeName="Temperature", Used=1).Create()
+            if 3 not in Devices:
+                Domoticz.Device(Name="waterPressure", Unit=3, TypeName="Pressure", Used=1).Create()
+            if 5 not in Devices:
+                Domoticz.Device(Name="dhwTemperature", Unit=5, TypeName="Temperature", Used=1).Create()
+            if 6 not in Devices:
+                Domoticz.Device(Name="EnergyConsumption", Unit=6, Type=243, TypeName="Kwh", Subtype=29, Used=1).Create()
+            if 7 not in Devices:
+                Domoticz.Device(Name="gasCalorificValue", Unit=7, Type=243, Subtype=31, Used=1).Create()
+            if 8 not in Devices:
+                Domoticz.Device(Name="zoneMode", Unit=8, TypeName="Selector Switch", Image=15, Options={"LevelNames":"Scheduling|Manual|TemporaryOverride|FrostProtection", "LevelOffHidden": "false", "SelectorStyle": "1"}, Used=1).Create()
+            if 9 not in Devices:
+                Domoticz.Device(Name="waterPressureToLow", Unit=9, TypeName="Switch", Switchtype=0, Image=13, Used=1).Create()
+            if 10 not in Devices:
+                Domoticz.Device(Name="EnergyDelivered", Unit=10, Type=243, TypeName="Kwh", Subtype=29, Switchtype=4, Used=1).Create()
+            if 11 not in Devices:
+                Domoticz.Device(Name="Status", Unit=11, TypeName="Text", Image=15, Used=1).Create()
+            if 12 not in Devices:
+                Domoticz.Device(Name="seasonalEfficiency", Unit=12, Type=243, Subtype=31, Used=1).Create()
+            if 13 not in Devices:
+                Domoticz.Device(Name="firePlaceModeActive", Unit=13, TypeName="Switch", Switchtype=0, Image=10, Used=1).Create()
 
 
 
@@ -337,15 +393,17 @@ class RemehaHomeAPI:
             except:
                 pass
 
-            #if str(Devices[1].sValue) != str(value_room_temperature):
-            Devices[1].Update(nValue=0, sValue=str(value_room_temperature))
+            if (self.usecombined and Devices[1].Type == 73):
+                Devices[1].Update(nValue=0, sValue=str(value_room_temperature) + ";" + str(value_setpoint))
+            else:
+                Devices[1].Update(nValue=0, sValue=str(value_room_temperature))
+                Devices[4].Update(nValue=0, sValue=str(value_setpoint))
+
             #if str(Devices[2].sValue) != str(value_outdoor_temperature):
             if response_json["appliances"][0]["capabilityOutdoorTemperature"] is True:
                 Devices[2].Update(nValue=0, sValue=str(value_outdoor_temperature))
             #if str(Devices[3].sValue) != str(value_water_pressure):
             Devices[3].Update(nValue=0, sValue=str(value_water_pressure))
-            #if str(Devices[4].sValue) != str(value_setpoint):
-            Devices[4].Update(nValue=0, sValue=str(value_setpoint))
             #if str(Devices[5].sValue) != str(value_dhwTemperature):
             if value_dhwTemperature is not None:
                 Devices[5].Update(nValue=0, sValue=str(value_dhwTemperature))
@@ -468,7 +526,6 @@ class RemehaHomeAPI:
                 monthly_url,
                 headers=headers
             )
-
             monthly_response.raise_for_status()
             monthly_data = monthly_response.json()
 
@@ -703,7 +760,11 @@ class RemehaHomeAPI:
         access_token = getattr(self, 'access_token', None)
         if access_token and self.check_token_validity(access_token) == "valid":
             try:
-                if unit == 4:  # setpoint device
+                if unit == 1: # New combined setpoint device
+                    if command == 'Set Level':
+                        room_temperature_setpoint = float(level)
+                        self.set_temperature(access_token, room_temperature_setpoint)
+                elif unit == 4:  # setpoint device
                     if command == 'Set Level':
                         room_temperature_setpoint = float(level)
                         self.set_temperature(access_token, room_temperature_setpoint)
