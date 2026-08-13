@@ -19,8 +19,8 @@
         </param>
         <param field="Mode4" label="Combined TempSettemp" width="100px" required="true">
             <options>
-                <option label="Yes" value="Y" default="true"/>
-                <option label="No" value="N"/>
+                <option label="Yes" value="Yes" default="true"/>
+                <option label="No" value="No"/>
             </options>
         </param>
     </params>
@@ -68,11 +68,16 @@ class RemehaHomeAPI:
         return None
 
     def onStart(self):
-        # Called when the plugin is started
-        Domoticz.Log("Remeha Home Plugin started. Domoticz version: " + Parameters["DomoticzVersion"])
 
         # Read options from Domoticz GUI
         self.readOptions()
+
+        # Called when the plugin is started
+        if self.usecombined:
+           Domoticz.Log("Remeha Home Plugin started with combined temp-settemp. Domoticz version: " + Parameters["DomoticzVersion"])
+        else:
+           Domoticz.Log("Remeha Home Plugin started with separate temp-settemp. Domoticz version: " + Parameters["DomoticzVersion"])
+
         # Check if there are no existing devices
         self.createDevices()
 
@@ -86,6 +91,7 @@ class RemehaHomeAPI:
 
     def readOptions(self):
         # Read options from Domoticz GUI
+
         if Parameters["Mode1"]:
             self.email = Parameters["Mode1"]
         if "Mode2" in Parameters and Parameters["Mode2"]:
@@ -98,11 +104,7 @@ class RemehaHomeAPI:
         if self.poll_interval > 300:
             self.poll_interval = 300
 
-        # Get DomoticzBuild number
-        DBa = re.search(r"\(build\s+(\d+)\)", Parameters["DomoticzVersion"])
-        if DBa:
-            self.domoticzbuild = int(DBa.group(1))
-        self.usecombined = (self.domoticzbuild > 16987 and Parameters["Mode4"] == "Y")
+        self.usecombined = (Parameters["Mode4"] == "Yes")
 
     def createDevices(self):
         # Declare Devices variable
@@ -111,59 +113,74 @@ class RemehaHomeAPI:
         # Create devices for temperature, pressure, and setpoint
         # Use Combined device when supported and requested in the hardware page
         if (self.usecombined):
-            OrgSetTempName = ''
+            OrgTempsValue="18.0"
+            OrgSetTempName = "roomTempsetPoint"
+            OrgSetTempsValue = "15.0"
+            OrgSetTempnValue = 0
+            # Delete old Temp device as that has to become the Combined SetTemp Device
             if 1 in Devices and Devices[1].Type != 73 :
-                Domoticz.Log(f"Deleted old Temp device: {Devices[1].Name} Type={Devices[1].Type}, SubType={Devices[1].SubType}")
-                Devices[1].Delete()
-                Domoticz.Log(f"Renamed Disabled Old SetTemp: {Devices[4].Name} ")
+                # retrieve current (4) - SetTemp device info
                 OrgSetTempName = Devices[4].Name
+                OrgSetTempsValue= Devices[4].sValue
+                OrgSetTempnValue= Devices[4].nValue
+                # retrieve current (1) - Temp device info
+                OrgTempsValue= Devices[1].sValue
+                # Delete old (1) - Temp device to trigger the below device creation
+                Domoticz.Log(f"Deleted old Temp device: \"{Devices[1].Name}\" Type={Devices[1].Type}, SubType={Devices[1].SubType}")
+                Devices[1].Delete()
+
+                # Disable&Rename old SetTemp device
                 newname = "OLD_"+OrgSetTempName
-                Devices[4].Update(
-                    nValue=Devices[4].nValue,
-                    sValue=Devices[4].sValue,
-                    Name=newname,
-                    Used=0
-                )
+                if 4 in Devices and Devices[4].Type != 73:
+                    Devices[4].Update(
+                        nValue=Devices[4].nValue,
+                        sValue=Devices[4].sValue,
+                        Name=newname,
+                        Used=0
+                    )
+                    Domoticz.Log(f"Renamed & Disabled Old SetTemp device to: \"{Devices[4].Name}\"")
 
             if 1 not in Devices:
-                Domoticz.Device(Name="roomTempsetPoint", Unit=1, Type=73, Subtype=0, Used=1).Create()
-                if OrgSetTempName != '':
-                    Devices[1].Update(
-                        nValue=Devices[1].nValue,
-                        sValue=Devices[1].sValue,
-                        Name=OrgSetTempName,
-                        Used=1
-                    )
+                Domoticz.Device(Name=OrgSetTempName, Unit=1, Type=73, Subtype=0, Used=1).Create()
+                Devices[1].Update(
+                    nValue=OrgSetTempnValue,
+                    sValue=OrgTempsValue + ";" + OrgSetTempsValue,
+                    Name=OrgSetTempName,
+                    Used=1
+                )
                 Domoticz.Log(f"Created combined device: {Devices[1].Name} Type={Devices[1].Type}, SubType={Devices[1].SubType}")
         else:
+            # Use separate Thermostat devices for SetTemp and temperature
             if 1 not in Devices:
                 Domoticz.Device(Name="roomTemperature", Unit=1, TypeName="Temperature", Used=1).Create()
                 Domoticz.Log(f"Created seperate Temp device: {Devices[1].Name}")
             if 4 not in Devices:
                 Domoticz.Device(Name="setPoint", Unit=4, TypeName="Setpoint", Used=1).Create()
                 Domoticz.Log(f"Created seperate SetTemp device: {Devices[4].Name}")
-            if 2 not in Devices:
-                Domoticz.Device(Name="outdoorTemperature", Unit=2, TypeName="Temperature", Used=1).Create()
-            if 3 not in Devices:
-                Domoticz.Device(Name="waterPressure", Unit=3, TypeName="Pressure", Used=1).Create()
-            if 5 not in Devices:
-                Domoticz.Device(Name="dhwTemperature", Unit=5, TypeName="Temperature", Used=1).Create()
-            if 6 not in Devices:
-                Domoticz.Device(Name="EnergyConsumption", Unit=6, Type=243, TypeName="Kwh", Subtype=29, Used=1).Create()
-            if 7 not in Devices:
-                Domoticz.Device(Name="gasCalorificValue", Unit=7, Type=243, Subtype=31, Used=1).Create()
-            if 8 not in Devices:
-                Domoticz.Device(Name="zoneMode", Unit=8, TypeName="Selector Switch", Image=15, Options={"LevelNames":"Scheduling|Manual|TemporaryOverride|FrostProtection", "LevelOffHidden": "false", "SelectorStyle": "1"}, Used=1).Create()
-            if 9 not in Devices:
-                Domoticz.Device(Name="waterPressureToLow", Unit=9, TypeName="Switch", Switchtype=0, Image=13, Used=1).Create()
-            if 10 not in Devices:
-                Domoticz.Device(Name="EnergyDelivered", Unit=10, Type=243, TypeName="Kwh", Subtype=29, Switchtype=4, Used=1).Create()
-            if 11 not in Devices:
-                Domoticz.Device(Name="Status", Unit=11, TypeName="Text", Image=15, Used=1).Create()
-            if 12 not in Devices:
-                Domoticz.Device(Name="seasonalEfficiency", Unit=12, Type=243, Subtype=31, Used=1).Create()
-            if 13 not in Devices:
-                Domoticz.Device(Name="firePlaceModeActive", Unit=13, TypeName="Switch", Switchtype=0, Image=10, Used=1).Create()
+
+        # other devices
+        if 2 not in Devices:
+            Domoticz.Device(Name="outdoorTemperature", Unit=2, TypeName="Temperature", Used=1).Create()
+        if 3 not in Devices:
+            Domoticz.Device(Name="waterPressure", Unit=3, TypeName="Pressure", Used=1).Create()
+        if 5 not in Devices:
+            Domoticz.Device(Name="dhwTemperature", Unit=5, TypeName="Temperature", Used=1).Create()
+        if 6 not in Devices:
+            Domoticz.Device(Name="EnergyConsumption", Unit=6, Type=243, TypeName="Kwh", Subtype=29, Used=1).Create()
+        if 7 not in Devices:
+            Domoticz.Device(Name="gasCalorificValue", Unit=7, Type=243, Subtype=31, Used=1).Create()
+        if 8 not in Devices:
+            Domoticz.Device(Name="zoneMode", Unit=8, TypeName="Selector Switch", Image=15, Options={"LevelNames":"Scheduling|Manual|TemporaryOverride|FrostProtection", "LevelOffHidden": "false", "SelectorStyle": "1"}, Used=1).Create()
+        if 9 not in Devices:
+            Domoticz.Device(Name="waterPressureToLow", Unit=9, TypeName="Switch", Switchtype=0, Image=13, Used=1).Create()
+        if 10 not in Devices:
+            Domoticz.Device(Name="EnergyDelivered", Unit=10, Type=243, TypeName="Kwh", Subtype=29, Switchtype=4, Used=1).Create()
+        if 11 not in Devices:
+            Domoticz.Device(Name="Status", Unit=11, TypeName="Text", Image=15, Used=1).Create()
+        if 12 not in Devices:
+            Domoticz.Device(Name="seasonalEfficiency", Unit=12, Type=243, Subtype=31, Used=1).Create()
+        if 13 not in Devices:
+            Domoticz.Device(Name="firePlaceModeActive", Unit=13, TypeName="Switch", Switchtype=0, Image=10, Used=1).Create()
 
 
 
