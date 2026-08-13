@@ -57,6 +57,15 @@ class RemehaHomeAPI:
                 Domoticz.Log(f"Retry attempt {attempt + 1}/{max_retries} for {method.upper()} {url}: {e}")
         return None
 
+    @staticmethod
+    def _format_exception(exc):
+        reason = getattr(exc, 'reason', None)
+        if reason is None and getattr(exc, 'args', None):
+            reason = exc.args[0] if len(exc.args) == 1 else exc.args
+        if reason is None:
+            reason = str(exc)
+        return f"{type(exc).__name__}: {reason}"
+
     def onStart(self):
         # Called when the plugin is started
         Domoticz.Log("Remeha Home Plugin started.")
@@ -149,7 +158,7 @@ class RemehaHomeAPI:
             Domoticz.Error(f"Authorize error: {type(e).__name__}: {reason}")
             return None
         except Exception as e:
-            Domoticz.Error(f"Unexpected error during GET request: {str(e)}")
+            Domoticz.Error(f"Unexpected error during GET request: {self._format_exception(e)}")
             return None
 
         if response.status_code != 200:
@@ -194,7 +203,7 @@ class RemehaHomeAPI:
             Domoticz.Error(f"Error during GET request for SelfAsserted: {type(e).__name__}: {reason}")
             return None
         except Exception as e:
-            Domoticz.Error(f"Unexpected error during GET request: {str(e)}")
+            Domoticz.Error(f"Unexpected error during GET request: {self._format_exception(e)}")
             return None
 
         if response.status_code != 200:
@@ -221,7 +230,7 @@ class RemehaHomeAPI:
             Domoticz.Error(f"Error during GET request for CombinedSigninAndSignup: {type(e).__name__}: {reason}")
             return None
         except Exception as e:
-            Domoticz.Error(f"Unexpected error during GET request: {str(e)}")
+            Domoticz.Error(f"Unexpected error during GET request: {self._format_exception(e)}")
             return None
 
         if response.status_code >= 400:
@@ -269,7 +278,7 @@ class RemehaHomeAPI:
             Domoticz.Error(f"new access token error: {type(e).__name__}: {reason}")
             return None
         except Exception as e:
-            Domoticz.Error(f"new access token error: {e}")
+            Domoticz.Error(f"new access token error: {self._format_exception(e)}")
 
         return response_json
 
@@ -387,7 +396,7 @@ class RemehaHomeAPI:
             return None
 
         except Exception as e:
-            Domoticz.Error(f"1.Error making GET request: {e}")
+            Domoticz.Error(f"Error making GET request: {self._format_exception(e)}")
 
     def set_temperature(self, access_token, room_temperature_setpoint):
         # Set temperature in the external system using a POST request
@@ -415,7 +424,7 @@ class RemehaHomeAPI:
             response.raise_for_status()
             Domoticz.Log(f"Temperature set successfully to {room_temperature_setpoint}")
         except Exception as e:
-            Domoticz.Error(f"2.Error making POST request: {e}")
+            Domoticz.Error(f"Error making POST request: {self._format_exception(e)}")
 
     def getDailyEnergyConsumption(self, access_token):
         headers = {
@@ -455,7 +464,7 @@ class RemehaHomeAPI:
             # Energy generated
             total_heating_energy_delivered_yearly = sum(heating_energy_delivered_values_yearly)
         except Exception as e:
-            Domoticz.Error(f"Energy consumption: yearly GET failed: {e}")
+            Domoticz.Error(f"Energy consumption: yearly GET failed: {self._format_exception(e)}")
 
         # Step 2: Get all results of the previous months excluding the current month
         current_month = datetime.datetime.now().month
@@ -488,7 +497,7 @@ class RemehaHomeAPI:
             # Energy delivered
             total_heating_energy_delivered_monthly = sum(heating_energy_delivered_values_monthly)
         except Exception as e:
-            Domoticz.Error(f"Energy consumption: monthly GET failed: {e}")
+            Domoticz.Error(f"Energy consumption: monthly GET failed: {self._format_exception(e)}")
 
         # If either the yearly or the monthly retrieval failed, skip this cycle
         # (the counters will simply update again at the next full hour)
@@ -556,7 +565,7 @@ class RemehaHomeAPI:
                 Devices[10].Update(nValue=0, sValue=str(EnergyDeliveredToday) + ";" + str(total_heating_energy_delivered))
                 Devices[12].Update(nValue=0, sValue=str(value_seasonalEfficiency), Options={"Custom": "1;SCOP"})
         except Exception as e:
-            Domoticz.Error(f"Energy consumption: daily GET failed: {e}")
+            Domoticz.Error(f"Energy consumption: daily GET failed: {self._format_exception(e)}")
 
 
     def check_token_validity(self,acces_token):
@@ -582,7 +591,7 @@ class RemehaHomeAPI:
                 Domoticz.Log("Token check: Token is invalid, getting new token.....")
                 return "invalid"  # If expiration timestamp is not present, consider it invalid
         except Exception as e:
-            print("Error:", e)
+            print("Error:", self._format_exception(e))
         return "invalid"
 
     def zonemode(self, access_token, level):
@@ -633,7 +642,7 @@ class RemehaHomeAPI:
                 Domoticz.Log("Zonemode succesfully set to FrostProtection")
 
         except Exception as e:
-                print("Error:", e)
+                print("Error:", self._format_exception(e))
                 return "invalid"
 
     def fireplacemode(self, access_token, fireplacemode):
@@ -664,7 +673,7 @@ class RemehaHomeAPI:
                 Domoticz.Log("Fireplace Mode succesfully set to true")
 
         except Exception as e:
-            print("Error:", e)
+            print("Error:", self._format_exception(e))
             return "invalid"
 
     def onheartbeat(self):
@@ -684,7 +693,7 @@ class RemehaHomeAPI:
                 # Check if the current time in minutes is 5, then get the daily energy consumption
                 # The API seems to be only updated once an hour so no use to run it more often.
             except Exception as e:
-                Domoticz.Error(f"6.Error making POST request: {e}")
+                Domoticz.Error(f"6.Error making POST request: {self._format_exception(e)}")
             if current_time_minutes == 5 and current_time_seconds < 30:
                 self.getDailyEnergyConsumption(access_token)
         else:
@@ -701,7 +710,7 @@ class RemehaHomeAPI:
                     if current_time_minutes == 5 and current_time_seconds < 30:
                         self.getDailyEnergyConsumption(access_token)
                 except Exception as e:
-                    Domoticz.Error(f"7.Error making POST request: {e}")
+                    Domoticz.Error(f"7.Error making POST request: {self._format_exception(e)}")
         self.cleanup()
 
     def oncommand(self, unit, command, level, hue):
@@ -718,7 +727,7 @@ class RemehaHomeAPI:
                 elif unit == 13: # fireplace mode
                     self.fireplacemode(access_token, level)
             except Exception as e:
-                Domoticz.Error(f"8.Error making POST request: {e}")
+                Domoticz.Error(f"8.Error making POST request: {self._format_exception(e)}")
         else:
              # Access token is expired or doesn't exist in the session, get a new one
             result = self.resolve_external_data()
