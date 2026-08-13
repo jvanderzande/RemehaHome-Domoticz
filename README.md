@@ -5,7 +5,7 @@ This Domoticz Python plugin integrates with the Remeha Home API, providing real-
 
 ## Credits
 This plugin is based on the Remeha Home Python library by Michiel Visser, available at [GitHub - Remeha Home Library](https://github.com/msvisser/remeha_home).
-It was further developed by Tuk90 & GizMoCuz and now transferred to jvanderzande.
+It was further developed by Tuk90, GizMoCuz. jvanderzande added the T6 Thermostat option and added some code to avoid hardware failures due to slow responses from the Remeha website.
 
 ## Installation
 1. Clone this repository into the Domoticz plugins folder using the following command: git clone https://github.com/jvanderzande/RemehaHome-Domoticz.git
@@ -16,13 +16,27 @@ It was further developed by Tuk90 & GizMoCuz and now transferred to jvanderzande
 - **Email:** Your Remeha Home account email.
 - **Password:** Your Remeha Home account password.
 - **Poll Interval:** Poll Interval (default 30 seconds). If you choose an amount higher than 30 seconds then set the value of Data Timeout to a higher value to prevent your logs from being flooded with 'timeout' error messages.
+- **Combined TempSettemp:** 
+  - **Yes** means you will get the new Thermostat6 device which combines the temperature and SetTemp into one device.
+  - **No** means you will get 2 separate devices: Thermostat and Temperature device.
+ 
+  **IMPORTANT**
+  - When changing from separate SetTemp&Temperature devices to the new combined Thermostat6, you need to update the scripts setting the Themostat device when using updatedevice to include both the "Temp;SetTemp" in sValue!
+  - process performed when changed to **Yes** and previously **No**:
+    - unit 1 - "RoomTemperature" will be removed
+    - unit 4 - "setPoint" will be renamed to "OLD_setpoint" and disabled.
+    - unit 1 - "setPoint" type Thermostat6 will be created.
+  - process performed when changed to **No** and previously **Yes**:
+    - unit 1 - "setPoint" will be removed
+    - unit 4 - "setPoint" will be renamed back to  "setpoint" and enabled.
+    - unit 1 - "RoomTemperature" will be created.
 
 ## Devices
 The plugin creates the following devices in Domoticz:
-1. Room Temperature
+1. Setpoint & Room Temperature  (-or- Room Temperature when not combined)
 2. Outdoor Temperature
 3. Water Pressure
-4. Setpoint
+4. None (-or- Setpoint when not combined)
 5. Domestic Hot Water Temperature
 6. Energy Consumption
 7. Energy Delivered
