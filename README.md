@@ -21,14 +21,22 @@ It was further developed by Tuk90, GizMoCuz. jvanderzande added the T6 Thermosta
   - **No** means you will get 2 separate devices: Thermostat and Temperature device.
  
   **IMPORTANT**
-  When changing from separate SetTemp&Temperature devices to the new combined Thermostat6, you need to update the scripts setting the Themostat device when using updatedevice to include both the "Temp;SetTemp" in sValue!
+  - When changing from separate SetTemp&Temperature devices to the new combined Thermostat6, you need to update the scripts setting the Themostat device when using updatedevice to include both the "Temp;SetTemp" in sValue!
+  - process performed when changed to **Yes** and previously **No**:
+    - unit 1 - "RoomTemperature" will be removed
+    - unit 4 - "setPoint" will be renamed to "OLD_setpoint" and disabled.
+    - unit 1 - "setPoint" type Thermostat6 will be created.
+  - process performed when changed to **No** and previously **Yes**:
+    - unit 1 - "setPoint" will be removed
+    - unit 4 - "setPoint" will be renamed back to  "setpoint" and enabled.
+    - unit 1 - "RoomTemperature" will be created.
 
 ## Devices
 The plugin creates the following devices in Domoticz:
-1. Room Temperature
+1. Setpoint & Room Temperature  (-or- Room Temperature when not combined)
 2. Outdoor Temperature
 3. Water Pressure
-4. Setpoint
+4. None (-or- Setpoint when not combined)
 5. Domestic Hot Water Temperature
 6. Energy Consumption
 7. Energy Delivered

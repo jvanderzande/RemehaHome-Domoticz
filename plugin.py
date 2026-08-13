@@ -83,9 +83,9 @@ class RemehaHomeAPI:
 
         # Called when the plugin is started
         if self.usecombined:
-           Domoticz.Log("Remeha Home Plugin started with combined temp-settemp. Domoticz version: " + Parameters["DomoticzVersion"])
+           Domoticz.Status("Remeha Home Plugin started with combined temp-settemp. Domoticz version: " + Parameters["DomoticzVersion"])
         else:
-           Domoticz.Log("Remeha Home Plugin started with separate temp-settemp. Domoticz version: " + Parameters["DomoticzVersion"])
+           Domoticz.Status("Remeha Home Plugin started with separate temp-settemp. Domoticz version: " + Parameters["DomoticzVersion"])
 
         # Check if there are no existing devices
         self.createDevices()
