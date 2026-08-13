@@ -1,5 +1,11 @@
+# SolarEdge ModbusTCP
+#
+# Source:  https://github.com/jvanderzande/RemehaHome-Domoticz.git
+# Authors:  Nick Baring/GizMoCuz/jvanderzande
+# License: MIT
+
 """
-<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz" version="1.4.1">
+<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz/jvanderzande" version="1.4.1" externallink=" https://github.com/jvanderzande/RemehaHome-Domoticz.git">
     <params>
         <param field="Mode1" label="Email" width="200px" required="true"/>
         <param field="Mode2" label="Password" width="200px" password="true" required="true"/>

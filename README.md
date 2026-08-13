@@ -5,7 +5,7 @@ This Domoticz Python plugin integrates with the Remeha Home API, providing real-
 
 ## Credits
 This plugin is based on the Remeha Home Python library by Michiel Visser, available at [GitHub - Remeha Home Library](https://github.com/msvisser/remeha_home).
-It was further developed by Tuk90 & GizMoCuzand now transferred to jvanderzande.
+It was further developed by Tuk90 & GizMoCuz and now transferred to jvanderzande.
 
 ## Installation
 1. Clone this repository into the Domoticz plugins folder using the following command: git clone https://github.com/jvanderzande/RemehaHome-Domoticz.git
