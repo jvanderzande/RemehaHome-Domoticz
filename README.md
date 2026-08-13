@@ -19,6 +19,9 @@ It was further developed by Tuk90, GizMoCuz. jvanderzande added the T6 Thermosta
 - **Combined TempSettemp:** 
   - **Yes** means you will get the new Thermostat6 device which combines the temperature and SetTemp into one device.
   - **No** means you will get 2 separate devices: Thermostat and Temperature device.
+ 
+  **IMPORTANT**
+  When changing from separate SetTemp&Temperature devices to the new combined Thermostat6, you need to update the scripts setting the Themostat device when using updatedevice to include both the "Temp;SetTemp" in sValue!
 
 ## Devices
 The plugin creates the following devices in Domoticz:
