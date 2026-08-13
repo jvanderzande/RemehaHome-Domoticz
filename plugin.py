@@ -159,13 +159,29 @@ class RemehaHomeAPI:
                 )
                 Domoticz.Log(f"Created combined device: {Devices[1].Name} Type={Devices[1].Type}, SubType={Devices[1].SubType}")
         else:
+            if 1 in Devices and Devices[1].Type == 73 :
+                Domoticz.Log(f"Deleted Combined SetTemp device: \"{Devices[1].Name}\"")
+                Devices[1].Delete();
+                newname = "roomTempsetPoint"
+                if 4 in Devices:
+                    # remove added "OLD_" prefix and enable previous define SetTemp device
+                    newname = Devices[4].Name.replace("OLD_","")
+                if 4 in Devices:
+                    Devices[4].Update(
+                        nValue=Devices[4].nValue,
+                        sValue=Devices[4].sValue,
+                        Name=newname,
+                        Used=1
+                    )
+                    Domoticz.Log(f"Renamed Old SetTemp device back to: \"{Devices[4].Name}\"")
+
             # Use separate Thermostat devices for SetTemp and temperature
             if 1 not in Devices:
                 Domoticz.Device(Name="roomTemperature", Unit=1, TypeName="Temperature", Used=1).Create()
-                Domoticz.Log(f"Created seperate Temp device: {Devices[1].Name}")
+                Domoticz.Log(f"Created separate Temp device: {Devices[1].Name}")
             if 4 not in Devices:
                 Domoticz.Device(Name="setPoint", Unit=4, TypeName="Setpoint", Used=1).Create()
-                Domoticz.Log(f"Created seperate SetTemp device: {Devices[4].Name}")
+                Domoticz.Log(f"Created separate SetTemp device: {Devices[4].Name}")
 
         # other devices
         if 2 not in Devices:
