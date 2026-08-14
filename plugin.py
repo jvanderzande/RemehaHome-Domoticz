@@ -95,9 +95,9 @@ class RemehaHomeAPI:
 
         # Called when the plugin is started
         if self.usecombined:
-           Domoticz.Status("Remeha Home Plugin started with combined temp-settemp. Domoticz version: " + Parameters["DomoticzVersion"])
+           Domoticz.Status("Remeha Home Plugin started using combined Temp-Settemp device. Domoticz version: " + Parameters["DomoticzVersion"])
         else:
-           Domoticz.Status("Remeha Home Plugin started with separate temp-settemp. Domoticz version: " + Parameters["DomoticzVersion"])
+           Domoticz.Status("Remeha Home Plugin started using separate Temp and Settemp devices. Domoticz version: " + Parameters["DomoticzVersion"])
 
         # Check if there are no existing devices
         self.createDevices()
@@ -486,7 +486,7 @@ class RemehaHomeAPI:
         # Cleanup session resources
         self._session.close()
 
-    def update_devices(self, access_token):
+    def update_devices(self, access_token, dumpdata=False):
         # Update Domoticz devices with data from Remeha Home
         headers = {
             "Authorization": f"Bearer {access_token}",
@@ -519,6 +519,8 @@ class RemehaHomeAPI:
                 return None
 
             response_json = response.json()
+            if dumpdata:
+                print(f"dashboard data:\n{json.dumps(response_json, indent=4)}")
 
             # declaring value_dhwTemperature to not break if the value is not present.
             value_dhwTemperature = None
@@ -628,7 +630,7 @@ class RemehaHomeAPI:
         except Exception as e:
             Domoticz.Error(f"Error making POST request: {self._format_exception(e)}")
 
-    def getDailyEnergyConsumption(self, access_token):
+    def getDailyEnergyConsumption(self, access_token, dumpdata=False):
         headers = {
             'Authorization': f'Bearer {access_token}',
             'Ocp-Apim-Subscription-Key': 'df605c5470d846fc91e848b1cc653ddf'
@@ -655,6 +657,9 @@ class RemehaHomeAPI:
             )
             yearly_response.raise_for_status()
             yearly_data = yearly_response.json()
+            if dumpdata:
+                print(f"yearly_data:\n{json.dumps(yearly_data, indent=4)}")
+
 
             # Extract "heatingEnergyConsumed" from each row in the yearly response body
             heating_energy_consumed_values_yearly = [entry["heatingEnergyConsumed"] for entry in yearly_data["data"]]
@@ -687,6 +692,8 @@ class RemehaHomeAPI:
             )
             monthly_response.raise_for_status()
             monthly_data = monthly_response.json()
+            if dumpdata:
+                print(f"monthly_data:\n{json.dumps(yearly_data, indent=4)}")
 
             # Extract "heatingEnergyConsumed" from each row in the monthly response body
             heating_energy_consumed_values_monthly = [entry["heatingEnergyConsumed"] for entry in monthly_data["data"]]
@@ -738,6 +745,8 @@ class RemehaHomeAPI:
             )
             response.raise_for_status()
             response_json = response.json()
+            if dumpdata:
+                print(f"EnergyToday_data:\n{json.dumps(yearly_data, indent=4)}")
 
             EnergyToday = response_json["data"][0]["heatingEnergyConsumed"]
 

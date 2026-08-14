@@ -3,11 +3,13 @@
 
 python Remehatest.py --email your@email.com --password yourpassword --action login
 python Remehatest.py --email your@email.com --password yourpassword --action update
+python Remehatest.py --email your@email.com --password yourpassword --action dailyenergy
+python Remehatest.py --email your@email.com --password yourpassword --action dumpdata
 python Remehatest.py --email your@email.com --password yourpassword --action set-temp 16.0
 -or-
 set REMEHA_EMAIL=your@email.com
 set REMEHA_PASSWORD=yourpassword
-python Remehatest.py --action login
+python Remehatest.py --action update
 
 This script intentionally imports the live code from plugin.py so it does not drift
 from the production implementation when the plugin changes.
@@ -156,15 +158,14 @@ class ManualRemehaTestRunner:
         print(f"Access token acquired: {token[:20]}..." if token else "No access token returned.")
         return token
 
-    def update(self, access_token: str):
-
-        self.api.update_devices(access_token)
+    def update(self, access_token: str, dumpdata: bool = False):
+        self.api.update_devices(access_token, dumpdata)
 
     def set_temperature(self, access_token: str, room_temperature_setpoint: float = 20.0):
         self.api.set_temperature(access_token, room_temperature_setpoint)
 
-    def daily_energy(self, access_token: str):
-        self.api.getDailyEnergyConsumption(access_token)
+    def daily_energy(self, access_token: str, dumpdata: bool = False):
+        self.api.getDailyEnergyConsumption(access_token, dumpdata)
 
     def cleanup(self):
         self.api.cleanup()
@@ -178,11 +179,22 @@ def run_manual_test(email: str, password: str, action: str = "login", temperatur
         if token is None:
             return 1
 
-        if action in {"update", "all"}:
-            print("Updating devices...")
-            runner.update(token)
-            print("Retrieving daily energy consumption...")
-            runner.daily_energy(token)
+        if action in {"update", "dailyenergy", "dumpdata"}:
+            # update needs to run always to get the basics loaded
+            if action == "dumpdata":
+                print("Retrieving and Dump device data for Domoticz...")
+                runner.update(token, True)
+            else:
+                print("Retrieving device data for Domoticz...")
+                runner.update(token)
+
+            # only run this for  dailyenergy and dumpdata need to run
+            if action in {"dailyenergy", "dumpdata"}:
+                print("Retrieving daily energy consumption...")
+                runner.daily_energy(token, (action == "dumpdata"))
+            else:
+                print("Not retrieving daily energy consumption: dev 6/10/12 will be empty")
+
             print("Devices info retrieved for Domoticz:")
             for unit, device in plugin.Devices.items():
                 print({
@@ -194,7 +206,8 @@ def run_manual_test(email: str, password: str, action: str = "login", temperatur
                     }
                 })
 
-        if action in {"set-temp", "all"}:
+
+        if action in {"set-temp"}:
             target_temperature = float(temperature)
             print(f"Setting room temperature to {target_temperature}C")
             runner.update(token)
@@ -215,7 +228,7 @@ def main() -> int:
     parser.add_argument("--password", default=os.getenv("REMEHA_PASSWORD"), help="Remeha password")
     parser.add_argument(
         "--action",
-        choices=["login", "update", "set-temp", "all"],
+        choices=["login", "update", "dailyenergy", "dumpdata", "set-temp"],
         default="login",
         help="Which plugin method to exercise after login",
     )
