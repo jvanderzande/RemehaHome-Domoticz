@@ -5,7 +5,7 @@
 # License: MIT
 
 """
-<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz/jvdzande" version="1.5.1" externallink=" https://github.com/jvanderzande/RemehaHome-Domoticz.git">
+<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz/jvdzande" version="1.5.2" externallink=" https://github.com/jvanderzande/RemehaHome-Domoticz.git">
     <params>
         <param field="Mode1" label="Email" width="200px" required="true"/>
         <param field="Mode2" label="Password" width="200px" password="true" required="true"/>
@@ -38,6 +38,14 @@ import calendar
 import time
 import re
 
+class TokenInfo:
+    """Class to store OAuth2 token information"""
+    def __init__(self):
+        self.access_token = None
+        self.refresh_token = None
+        self.expires_on = None
+
+
 class RemehaHomeAPI:
     def __init__(self):
         # Initialize a session for making HTTP requests
@@ -48,6 +56,7 @@ class RemehaHomeAPI:
         self.usecombined = False
         self.poll_interval = 0
         self.LastWebUpdate = None
+        self.APItokeninfo = TokenInfo()
 
 
     def _request_with_retry(self, method, url, max_retries=3, timeout=5, **kwargs):
@@ -77,6 +86,9 @@ class RemehaHomeAPI:
         return f"{type(exc).__name__}: {reason}"
 
     def onStart(self):
+
+        # Try to load cached token from file
+        self._load_token_from_file()
 
         # Read options from Domoticz GUI
         self.readOptions()
@@ -208,8 +220,23 @@ class RemehaHomeAPI:
             Domoticz.Device(Name="firePlaceModeActive", Unit=13, TypeName="Switch", Switchtype=0, Image=10, Used=1).Create()
 
 
+    def _get_access_token(self):
+        # Check if the access token is valid, refresh if needed, or get a new one
+        if self.check_token_validity(self.APItokeninfo.access_token) != "valid":
+            Domoticz.Debug("Access token invalid or expired, attempting refresh...")
 
-    def resolve_external_data(self):
+            # Try to refresh the token first
+            if not self._refresh_access_token():
+                # If refresh fails, do full authentication
+                Domoticz.Log("Token refresh failed, performing full authentication...")
+                result = self._perform_authentication()
+                if result is None:
+                    Domoticz.Error("Failed to obtain new access token")
+                    return None
+
+        return self.APItokeninfo.access_token
+
+    def _perform_authentication(self):
         # Logic for resolving external data (OAuth2 flow)
         random_state = secrets.token_urlsafe()
         code_challenge = secrets.token_urlsafe(64)
@@ -369,7 +396,91 @@ class RemehaHomeAPI:
         except Exception as e:
             Domoticz.Error(f"new access token error: {self._format_exception(e)}")
 
+        # Save token data to instance variable
+        self.APItokeninfo.access_token = response_json.get("access_token")
+        self.APItokeninfo.refresh_token = response_json.get("refresh_token")
+        self.APItokeninfo.expires_on = response_json.get("expires_on")
+
+        Domoticz.Debug(f"New token saved, expires at: {datetime.datetime.fromtimestamp(self.APItokeninfo.expires_on)} ({self.APItokeninfo.expires_on})")
+        self._save_token_to_file()
         return response_json
+
+    def _refresh_access_token(self):
+        """Refresh the access token using the refresh token"""
+        if not self.APItokeninfo.refresh_token:
+            Domoticz.Debug("No refresh token available, must do full authentication")
+            return False
+
+        grant_params = {
+            "grant_type": "refresh_token",
+            "refresh_token": self.APItokeninfo.refresh_token,
+            "client_id": "6ce007c6-0628-419e-88f4-bee2e6418eec",
+        }
+
+        try:
+            response = self._request_new_token(grant_params)
+            if response is not None:
+                Domoticz.Log(f"Token refreshed, expires at: {datetime.datetime.fromtimestamp(self.APItokeninfo.expires_on)} ({self.APItokeninfo.expires_on})")
+                return True
+        except Exception as e:
+            Domoticz.Error(f"Token refresh failed: {self._format_exception(e)}")
+
+        return False
+
+    def _save_token_to_file(self):
+        """Save token information to a JSON file for persistence"""
+        try:
+            import os
+            import json
+
+            # Get the plugin directory
+            plugin_dir = os.path.dirname(os.path.abspath(__file__))
+            token_file = os.path.join(plugin_dir, ".token_cache.json")
+
+            # Prepare token data
+            token_data = {
+                "access_token": self.APItokeninfo.access_token,
+                "refresh_token": self.APItokeninfo.refresh_token,
+                "expires_on": self.APItokeninfo.expires_on
+            }
+
+            # Write to file
+            with open(token_file, 'w', encoding='utf-8') as f:
+                json.dump(token_data, f, indent=2)
+
+            Domoticz.Debug(f"Token saved to {token_file}")
+        except Exception as e:
+            Domoticz.Debug(f"Failed to save token to file: {self._format_exception(e)}")
+
+    def _load_token_from_file(self):
+        """Load token information from JSON file if it exists"""
+        try:
+            import os
+            import json
+
+            # Get the plugin directory
+            plugin_dir = os.path.dirname(os.path.abspath(__file__))
+            token_file = os.path.join(plugin_dir, ".token_cache.json")
+
+            # Check if file exists
+            if not os.path.exists(token_file):
+                Domoticz.Debug("No cached token file found")
+                return False
+
+            # Read from file
+            with open(token_file, 'r', encoding='utf-8') as f:
+                token_data = json.load(f)
+
+            # Load token data into APItokeninfo
+            self.APItokeninfo.access_token = token_data.get("access_token")
+            self.APItokeninfo.refresh_token = token_data.get("refresh_token")
+            self.APItokeninfo.expires_on = token_data.get("expires_on")
+
+            Domoticz.Log(f"Token loaded from cache file, expires at: {datetime.datetime.fromtimestamp(self.APItokeninfo.expires_on)} ({self.APItokeninfo.expires_on})")
+            return True
+        except Exception as e:
+            Domoticz.Debug(f"Failed to load token from file: {self._format_exception(e)}")
+            return False
 
     def cleanup(self):
         # Cleanup session resources
@@ -513,7 +624,7 @@ class RemehaHomeAPI:
                     json=json_data,
                     )
             response.raise_for_status()
-            Domoticz.Log(f"Temperature set successfully to {room_temperature_setpoint}")
+            Domoticz.Status(f"Temperature set successfully to {room_temperature_setpoint}")
         except Exception as e:
             Domoticz.Error(f"Error making POST request: {self._format_exception(e)}")
 
@@ -658,30 +769,33 @@ class RemehaHomeAPI:
             Domoticz.Error(f"Energy consumption: daily GET failed: {self._format_exception(e)}")
 
 
-    def check_token_validity(self,acces_token):
+    def check_token_validity(self, acces_token):
+        if not acces_token:
+            return "invalid"
+
         try:
             # Extracting the payload part of the token
             payload = acces_token.split('.')[1]
             # Decoding the payload from base64
             decoded_payload = base64.b64decode(payload + '===').decode('utf-8')
             # Converting the decoded payload to a dictionary
-            payload_dict = eval(decoded_payload)
+            payload_dict = json.loads(decoded_payload)
 
             # Extracting the expiration timestamp
             expiration_timestamp = payload_dict.get('exp')
             if expiration_timestamp:
-                #added 5 seconds to be certain that if the token expires in a few seconds a new one is fetched
-                current_timestamp = datetime.datetime.now().timestamp() + 5
+                #added 30 seconds to be certain that if the token expires in a few seconds a new one is fetched
+                current_timestamp = datetime.datetime.now().timestamp() + 30
                 if current_timestamp < expiration_timestamp:
                     return "valid"
                 else:
-                    Domoticz.Log("Token check: Token is invalid, getting new token.....")
+                    Domoticz.Debug("Token check: Token is expired, getting new token.....")
                     return "invalid"
             else:
-                Domoticz.Log("Token check: Token is invalid, getting new token.....")
+                Domoticz.Debug("Token check: Token is invalid, getting new token.....")
                 return "invalid"  # If expiration timestamp is not present, consider it invalid
         except Exception as e:
-            print("Error:", self._format_exception(e))
+            Domoticz.Error("Token check error: " + self._format_exception(e))
         return "invalid"
 
     def zonemode(self, access_token, level):
@@ -699,7 +813,7 @@ class RemehaHomeAPI:
                     json=json_data
                     )
                 response.raise_for_status()
-                Domoticz.Log("Zonemode succesfully set to Scheduling")
+                Domoticz.Status("Zonemode succesfully set to Scheduling")
             elif level == 10: # Manual mode
                 room_temperature_setpoint = float(Devices[4].sValue)
                 json_data = {"roomTemperatureSetPoint": room_temperature_setpoint}
@@ -710,7 +824,7 @@ class RemehaHomeAPI:
                     json=json_data
                     )
                 response.raise_for_status()
-                Domoticz.Log("Zonemode succesfully set to Manual")
+                Domoticz.Status("Zonemode succesfully set to Manual")
             elif level == 20: # TemporaryOverride mode
                 room_temperature_setpoint = float(Devices[4].sValue)
                 json_data = {'roomTemperatureSetPoint': room_temperature_setpoint}
@@ -721,7 +835,7 @@ class RemehaHomeAPI:
                     json=json_data,
                     )
                 response.raise_for_status()
-                Domoticz.Log("Zonemode succesfully set to TemporaryOverride")
+                Domoticz.Status("Zonemode succesfully set to TemporaryOverride")
             elif level == 30: # FrostProtection mode
                 response = self._request_with_retry(
                     "post",
@@ -729,7 +843,7 @@ class RemehaHomeAPI:
                     headers=headers,
                     )
                 response.raise_for_status()
-                Domoticz.Log("Zonemode succesfully set to FrostProtection")
+                Domoticz.Status("Zonemode succesfully set to FrostProtection")
 
         except Exception as e:
                 print("Error:", self._format_exception(e))
@@ -750,7 +864,7 @@ class RemehaHomeAPI:
                     )
                 response.raise_for_status()
                 Devices[13].Update(nValue=0, sValue="Off")
-                Domoticz.Log("Fireplace Mode succesfully set to false")
+                Domoticz.Status("Fireplace Mode succesfully set to false")
             elif str(value_firePlaceModeActive) == "False": # Fireplace mode currently off
                 json_data = {"fireplaceModeActive": True}
                 response = requests.post(
@@ -760,7 +874,7 @@ class RemehaHomeAPI:
                     )
                 response.raise_for_status()
                 Devices[13].Update(nValue=1, sValue="On")
-                Domoticz.Log("Fireplace Mode succesfully set to true")
+                Domoticz.Status("Fireplace Mode succesfully set to true")
 
         except Exception as e:
             print("Error:", self._format_exception(e))
@@ -771,32 +885,17 @@ class RemehaHomeAPI:
         if self.LastWebUpdate is not None and (datetime.datetime.now() - self.LastWebUpdate).total_seconds() < self.poll_interval:
             return
         self.LastWebUpdate = datetime.datetime.now()
-        Domoticz.Log("Remeha Home plugin heartbeat")
+        Domoticz.Log("get Remeha Home webdata")
         current_time_minutes = time.localtime().tm_min
         # current_time_seconds = time.localtime().tm_sec
 
-        # Check if the access token exists in the instance variable self and if it's valid
-        access_token = getattr(self, 'access_token', None)
-        if access_token and self.check_token_validity(access_token) == "valid":
-            try:
-                self.update_devices(access_token)
-                # Check if the current time in minutes is 5, then get the daily energy consumption
-                # The API seems to be only updated once an hour so no use to run it more often.
-            except Exception as e:
-                Domoticz.Error(f"6.Error making POST request: {self._format_exception(e)}")
-        else:
-            # Access token is expired or doesn't exist in the session, get a new one
-            result = self.resolve_external_data()
-            if result is not None:
-                try:
-                    access_token = result.get("access_token")
-                    # Save the access token to the session
-                    self.access_token = access_token
-                    self.update_devices(access_token)
-                    # Check if the current time in minutes is 5, then get the daily energy consumption
-                    # The API seems to be only updated once an hour so no use to run it more often.
-                except Exception as e:
-                    Domoticz.Error(f"7.Error making POST request: {self._format_exception(e)}")
+        # Check if the access token is valid, refresh if needed, or get a new one
+        access_token = self._get_access_token()
+
+        try:
+            self.update_devices(access_token)
+        except Exception as e:
+            Domoticz.Error(f"6.Error making update_devices request: {self._format_exception(e)}")
 
         # Do an hourly check for energy consumption between 5 - 15 past the hour depending on the update freq
         seclastupdate = 0
@@ -813,9 +912,11 @@ class RemehaHomeAPI:
 
     def oncommand(self, unit, command, level, hue):
         # Command handling function
-        access_token = getattr(self, 'access_token', None)
-        if access_token and self.check_token_validity(access_token) == "valid":
-            try:
+        access_token = self._get_access_token()
+        if access_token is None:
+            Domoticz.Error("Skip update devices, access token is not available")
+            return
+        try:
                 if unit == 1: # New combined setpoint device
                     if command == 'Set Level':
                         room_temperature_setpoint = float(level)
@@ -828,22 +929,14 @@ class RemehaHomeAPI:
                     self.zonemode(access_token, level)
                 elif unit == 13: # fireplace mode
                     self.fireplacemode(access_token, level)
-            except Exception as e:
-                Domoticz.Error(f"8.Error making POST request: {self._format_exception(e)}")
-        else:
-             # Access token is expired or doesn't exist in the session, get a new one
-            result = self.resolve_external_data()
-            if result is not None:
-                try:
-                    access_token = result.get("access_token")
-                    # Save the access token to the session
-                    self.access_token = access_token
-                    if unit == 4:  # setpoint device
-                        if command == 'Set Level':
-                            room_temperature_setpoint = float(level)
-                            self.set_temperature(access_token, room_temperature_setpoint)
-                except Exception as e:
-                    Domoticz.Error(f"9.Error making POST request: {e}")
+        except Exception as e:
+            Domoticz.Error(f"8.Error oncommand set device request: {self._format_exception(e)}")
+
+        # .. and retrieve the updated status
+        try:
+            self.update_devices(access_token)
+        except Exception as e:
+            Domoticz.Error(f"9.Error getting update_devices request: {self._format_exception(e)}")
         self.cleanup()
 
 # Create an instance of the RemehaHomeAPI class
