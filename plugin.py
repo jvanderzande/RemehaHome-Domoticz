@@ -5,7 +5,7 @@
 # License: MIT
 
 """
-<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz/jvdzande" version="1.5.0" externallink=" https://github.com/jvanderzande/RemehaHome-Domoticz.git">
+<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz/jvdzande" version="1.5.1" externallink=" https://github.com/jvanderzande/RemehaHome-Domoticz.git">
     <params>
         <param field="Mode1" label="Email" width="200px" required="true"/>
         <param field="Mode2" label="Password" width="200px" password="true" required="true"/>
@@ -64,7 +64,7 @@ class RemehaHomeAPI:
             except requests.exceptions.RequestException as e:
                 if attempt == max_retries - 1:
                     raise
-                Domoticz.Log(f"Retry attempt {attempt + 1}/{max_retries} for {method.upper()} {url}: {e}")
+                Domoticz.Debug(f"Retry attempt {attempt + 1}/{max_retries} for {method.upper()} {url}: {e}")
         return None
 
     @staticmethod
@@ -773,7 +773,7 @@ class RemehaHomeAPI:
         self.LastWebUpdate = datetime.datetime.now()
         Domoticz.Log("Remeha Home plugin heartbeat")
         current_time_minutes = time.localtime().tm_min
-        current_time_seconds = time.localtime().tm_sec
+        # current_time_seconds = time.localtime().tm_sec
 
         # Check if the access token exists in the instance variable self and if it's valid
         access_token = getattr(self, 'access_token', None)
@@ -784,8 +784,6 @@ class RemehaHomeAPI:
                 # The API seems to be only updated once an hour so no use to run it more often.
             except Exception as e:
                 Domoticz.Error(f"6.Error making POST request: {self._format_exception(e)}")
-            if current_time_minutes == 5 and current_time_seconds < 30:
-                self.getDailyEnergyConsumption(access_token)
         else:
             # Access token is expired or doesn't exist in the session, get a new one
             result = self.resolve_external_data()
@@ -797,10 +795,20 @@ class RemehaHomeAPI:
                     self.update_devices(access_token)
                     # Check if the current time in minutes is 5, then get the daily energy consumption
                     # The API seems to be only updated once an hour so no use to run it more often.
-                    if current_time_minutes == 5 and current_time_seconds < 30:
-                        self.getDailyEnergyConsumption(access_token)
                 except Exception as e:
                     Domoticz.Error(f"7.Error making POST request: {self._format_exception(e)}")
+
+        # Do an hourly check for energy consumption between 5 - 15 past the hour depending on the update freq
+        seclastupdate = 0
+        try:
+            lastupdate = Devices[6].LastUpdate
+            seclastupdate = time.time() - time.mktime(time.strptime(lastupdate, "%Y-%m-%d %H:%M:%S"))
+        except:
+            seclastupdate = 99999
+        Domoticz.Debug(f"seclastupdate:{seclastupdate:.0f}")
+        if seclastupdate > 720 and current_time_minutes < 15 and current_time_minutes > 4:
+            self.getDailyEnergyConsumption(access_token)
+
         self.cleanup()
 
     def oncommand(self, unit, command, level, hue):
