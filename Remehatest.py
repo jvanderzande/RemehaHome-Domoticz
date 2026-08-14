@@ -19,6 +19,7 @@ import argparse
 import os
 import sys
 import types
+import datetime
 from pathlib import Path
 
 WORKDIR = Path(__file__).resolve().parent
@@ -38,6 +39,7 @@ Domoticz.Log = lambda *args, **kwargs: print(*args)
 Domoticz.Error = lambda *args, **kwargs: print("[ERROR]", *args)
 Domoticz.Status = lambda *args, **kwargs: print("[STATUS]", *args)
 Domoticz.Heartbeat = lambda *args, **kwargs: None
+Domoticz.Debug = lambda *args, **kwargs: print("[DEBUG]", *args)
 Domoticz.Debugging = 0
 
 
@@ -121,8 +123,32 @@ class ManualRemehaTestRunner:
         self.api.readOptions()
         self.api.createDevices()
 
+        # Initialize the plugin and load cached tokens
+        self.api.onStart()
+
+    def try_cached_token(self):
+        """Try to use a cached token if available and valid."""
+        if self.api.APItokeninfo.access_token:
+            if self.api.check_token_validity(self.api.APItokeninfo.access_token) == "valid":
+                print(f"Token loaded from cache file, expires at: {datetime.datetime.fromtimestamp(self.api.APItokeninfo.expires_on)} ({self.api.APItokeninfo.expires_on})")
+                return self.api.APItokeninfo.access_token
+            else:
+                print("Cached token is expired, attempting to refresh...")
+                if self.api._refresh_access_token():
+                    print("Token refreshed successfully")
+                    return self.api.APItokeninfo.access_token
+        return None
+
     def login(self):
-        result = self.api.resolve_external_data()
+        """Attempt login with cached token or full authentication."""
+        # Try to use cached token first
+        token = self.try_cached_token()
+        if token:
+            return token
+
+        # If no valid cached token, do full authentication
+        print("No valid cached token, performing full authentication...")
+        result = self.api._perform_authentication()
         if result is None:
             print("Authentication failed.")
             return None
