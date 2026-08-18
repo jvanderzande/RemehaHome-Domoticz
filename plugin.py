@@ -5,7 +5,7 @@
 # License: MIT
 
 """
-<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz/jvdzande" version="1.5.2" externallink=" https://github.com/jvanderzande/RemehaHome-Domoticz.git">
+<plugin key="RemehaHome" name="Remeha Home Plugin" author="Nick Baring/GizMoCuz/jvdzande" version="1.5.3" externallink=" https://github.com/jvanderzande/RemehaHome-Domoticz.git">
     <params>
         <param field="Mode1" label="Email" width="200px" required="true"/>
         <param field="Mode2" label="Password" width="200px" password="true" required="true"/>
@@ -37,6 +37,7 @@ import datetime
 import calendar
 import time
 import traceback
+import threading
 # used for VSCode to ignore:"Parameters" is not defined
 from typing import Any
 Parameters: dict[str, Any]
@@ -62,8 +63,8 @@ class RemehaHomeAPI:
         self.APItokeninfo = TokenInfo()
 
 
-    def _request_with_retry(self, method, url, max_retries=3, timeout=5, **kwargs):
-        """Helper method to make requests with retry logic and 5 second timeout."""
+    def _request_with_retry(self, method, url, max_retries=3, timeout=10, **kwargs):
+        """Helper method to make requests with retry logic and 10 second default timeout."""
         for attempt in range(max_retries):
             try:
                 if method.lower() == 'get':
@@ -903,10 +904,24 @@ class RemehaHomeAPI:
         # Check update interval ourselves to avoid error for heartbeat longer than 30 seconds cause hardware errors in domoticz
         if self.LastWebUpdate is not None and (datetime.datetime.now() - self.LastWebUpdate).total_seconds() < self.poll_interval-3:
             return
+        # Perform the web update async to avoid blocking the heartbeat and harware not responding errors
         self.LastWebUpdate = datetime.datetime.now()
-        current_time_minutes = time.localtime().tm_min
-        # current_time_seconds = time.localtime().tm_sec
+        def _async_perform_webupdate():
+            try:
+                self.perform_webupdate()
+            except Exception as e:
+                Domoticz.Error(f"Error calling perform_webupdate: {self._format_exception(e)}")
 
+        threading.Thread(
+            target=_async_perform_webupdate,
+            name="perform_webupdate",
+            daemon=True,
+        ).start()
+        Domoticz.Debug("OnHeartbeat WebUpdate started asynchronously.")
+
+    # get Data from Remeha Home API
+    def perform_webupdate(self):
+        self.LastWebUpdate = datetime.datetime.now()
         # Check if the access token is valid, refresh if needed, or get a new one
         access_token = self._get_access_token()
 
@@ -915,18 +930,18 @@ class RemehaHomeAPI:
         except Exception as e:
             Domoticz.Error(f"6.Error making update_devices request: {self._format_exception(e)}")
 
-        # Do an hourly check for energy consumption between 5 - 15 past the hour depending on the update freq
-        seclastupdate = 0
+        # update hourly between 30-40 past the hour. It gave errors after midnight between 0-15 past.
+        # Ensure we only run it one time by checking the last update time of one of the devices
+        DailyEngLastUpdate = 0
         try:
             lastupdate = Devices[6].LastUpdate
-            seclastupdate = time.time() - time.mktime(time.strptime(lastupdate, "%Y-%m-%d %H:%M:%S"))
+            DailyEngLastUpdate = time.time() - time.mktime(time.strptime(lastupdate, "%Y-%m-%d %H:%M:%S"))
         except:
-            seclastupdate = 99999
-        Domoticz.Debug(f"seclastupdate:{seclastupdate:.0f}")
-        # update hourly between 30-40 past the hour. It gave errors after midnight between 0-15 past.
-        if seclastupdate > 720 and current_time_minutes > 29 and current_time_minutes < 41 :
-            # pause a little then also get DailyEnergyConsumption
-            time.sleep(2.0)
+            DailyEngLastUpdate = 99999
+        Domoticz.Debug(f"DailyEngLastUpdate:{DailyEngLastUpdate:.0f}")
+        current_time_minutes = time.localtime().tm_min
+        if DailyEngLastUpdate > 720 and current_time_minutes > 29 and current_time_minutes < 41 :
+            # Get Daily energy consumption
             self.getDailyEnergyConsumption(access_token)
 
     def oncommand(self, unit, command, level, hue):
